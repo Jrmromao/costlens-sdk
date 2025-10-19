@@ -1,0 +1,8 @@
+src/
+tsconfig.json
+*.test.ts
+*.test.js
+.git/
+.github/
+node_modules/
+PUBLISHING.md
