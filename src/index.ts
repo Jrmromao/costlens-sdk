@@ -73,7 +73,9 @@ export class CostLens {
   constructor(config: CostLensConfig) {
     // Validate API key but don't throw - just warn
     if (!config.apiKey || config.apiKey.trim() === '') {
-      console.warn('[CostLens] Warning: No API key provided. Tracking and optimization features will be disabled, but your app will continue to work.');
+      console.warn(
+        '[CostLens] Warning: No API key provided. Tracking and optimization features will be disabled, but your app will continue to work.'
+      );
     }
 
     this.config = {
@@ -82,14 +84,14 @@ export class CostLens {
       maxRetries: 3,
       middleware: [],
       autoFallback: false,
-      smartRouting: true,  // ON by default
+      smartRouting: true, // ON by default
       ...config,
     };
   }
 
   private estimateComplexity(messages: any[]): 'simple' | 'medium' | 'complex' {
     const totalLength = messages.reduce((sum, m) => sum + (m.content?.length || 0), 0);
-    const hasSystemPrompt = messages.some(m => m.role === 'system');
+    const hasSystemPrompt = messages.some((m) => m.role === 'system');
     const messageCount = messages.length;
 
     if (totalLength < 100 && !hasSystemPrompt && messageCount <= 2) return 'simple';
@@ -106,12 +108,12 @@ export class CostLens {
     // PRIORITY 1: OpenAI routing (works for 90% of users)
     if (requestedModel.includes('gpt')) {
       const complexity = this.estimateComplexity(messages);
-      
+
       // Simple tasks: GPT-4 → GPT-3.5-turbo (98% savings)
       if (complexity === 'simple' && requestedModel.includes('gpt-4')) {
         return 'gpt-3.5-turbo';
       }
-      
+
       // Medium tasks: GPT-4 → GPT-4o (86% savings)
       if (complexity === 'medium' && requestedModel === 'gpt-4') {
         return 'gpt-4o';
@@ -121,17 +123,17 @@ export class CostLens {
     // PRIORITY 1.5: Anthropic routing (for Claude users)
     if (requestedModel.includes('claude')) {
       const complexity = this.estimateComplexity(messages);
-      
+
       // Simple tasks: Claude Opus → Claude Haiku (98% savings)
       if (complexity === 'simple' && requestedModel.includes('claude-3-opus')) {
         return 'claude-3-haiku';
       }
-      
+
       // Medium tasks: Claude Opus → Claude 3.5 Sonnet (93% savings)
       if (complexity === 'medium' && requestedModel.includes('claude-3-opus')) {
         return 'claude-3.5-sonnet';
       }
-      
+
       // Simple tasks: Claude Sonnet → Claude Haiku (92% savings)
       if (complexity === 'simple' && requestedModel.includes('claude-3-sonnet')) {
         return 'claude-3-haiku';
@@ -151,15 +153,15 @@ export class CostLens {
     try {
       const response = await fetch(`${this.config.baseUrl}/api/quality/routing`, {
         headers: {
-          'Authorization': `Bearer ${this.config.apiKey}`,
+          Authorization: `Bearer ${this.config.apiKey}`,
         },
       });
 
       if (response.ok) {
-        const data = await response.json() as { enabled: boolean };
+        const data = (await response.json()) as { enabled: boolean };
         return data.enabled;
       }
-      
+
       // Invalid API key - disable routing but don't break
       if (response.status === 401 || response.status === 403) {
         console.warn('[CostLens] Invalid API key - smart routing disabled');
@@ -179,7 +181,7 @@ export class CostLens {
       'gpt-4o': ['gpt-4-turbo', 'claude-3.5-sonnet', 'gpt-3.5-turbo'],
       'claude-3.5-sonnet': ['gpt-4o', 'claude-3-sonnet', 'gpt-3.5-turbo'],
       'gemini-1.5-flash': ['gemini-1.5-pro', 'gpt-3.5-turbo', 'claude-3-haiku'],
-      
+
       // Legacy Models
       'gpt-4': ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'],
       'gpt-4-turbo': ['gpt-4o', 'gpt-4', 'gpt-3.5-turbo'],
@@ -205,40 +207,43 @@ export class CostLens {
    * Validate pricing accuracy - call this to check if pricing is up-to-date
    * @returns Object with pricing validation status and recommendations
    */
-  validatePricing(): { 
-    status: 'current' | 'outdated' | 'unknown', 
-    message: string, 
-    lastUpdated: string,
-    recommendations: string[]
+  validatePricing(): {
+    status: 'current' | 'outdated' | 'unknown';
+    message: string;
+    lastUpdated: string;
+    recommendations: string[];
   } {
     return {
       status: 'unknown',
-      message: 'Pricing accuracy cannot be guaranteed due to rapid changes in AI model pricing. Please verify with official provider documentation.',
+      message:
+        'Pricing accuracy cannot be guaranteed due to rapid changes in AI model pricing. Please verify with official provider documentation.',
       lastUpdated: 'January 2025',
       recommendations: [
         'Check OpenAI pricing page: https://openai.com/pricing',
         'Check Anthropic pricing page: https://www.anthropic.com/pricing',
         'Check Google AI pricing: https://ai.google.dev/pricing',
         'Check DeepSeek pricing: https://api-docs.deepseek.com/quick_start/pricing',
-        'Consider implementing dynamic pricing updates via API'
-      ]
+        'Consider implementing dynamic pricing updates via API',
+      ],
     };
   }
 
   private async estimateCost(model: string, messages: any[]): Promise<number> {
-    const estimatedTokens = messages.reduce((sum, m) => sum + (m.content?.length || 0) / 4, 0) * 1.5;
-    
+    const estimatedTokens =
+      messages.reduce((sum, m) => sum + (m.content?.length || 0) / 4, 0) * 1.5;
+
     try {
       // Try to get pricing from database first
       const response = await fetch(`${this.config.baseUrl}/api/pricing/scrape`);
       if (response.ok) {
-        const data = await response.json() as { success: boolean; data?: any[] };
+        const data = (await response.json()) as { success: boolean; data?: any[] };
         if (data.success && data.data) {
-          const pricingData = data.data.find((p: any) => 
-            p.model.toLowerCase().includes(model.toLowerCase()) ||
-            model.toLowerCase().includes(p.model.toLowerCase())
+          const pricingData = data.data.find(
+            (p: any) =>
+              p.model.toLowerCase().includes(model.toLowerCase()) ||
+              model.toLowerCase().includes(p.model.toLowerCase())
           );
-          
+
           if (pricingData) {
             return (estimatedTokens / 1000000) * pricingData.averageCost;
           }
@@ -251,30 +256,30 @@ export class CostLens {
     // Fallback to static pricing
     const staticPricing: Record<string, number> = {
       // OpenAI 2025 (per 1M tokens, input + output average)
-      'gpt-4o': 6.25,              // $2.50 input + $10 output = $6.25 avg
-      'gpt-4': 45.00,              // $30 input + $60 output = $45 avg (legacy)
-      'gpt-4-turbo': 20.00,        // $10 input + $30 output = $20 avg
-      'gpt-3.5-turbo': 1.00,       // $0.5 input + $1.5 output = $1 avg
-      
+      'gpt-4o': 6.25, // $2.50 input + $10 output = $6.25 avg
+      'gpt-4': 45.0, // $30 input + $60 output = $45 avg (legacy)
+      'gpt-4-turbo': 20.0, // $10 input + $30 output = $20 avg
+      'gpt-3.5-turbo': 1.0, // $0.5 input + $1.5 output = $1 avg
+
       // Anthropic 2025 (per 1M tokens, input + output average)
-      'claude-3.5-sonnet': 3.00,   // $3 input + $3 output = $3 avg (25% price cut!)
-      'claude-3-opus': 45.00,      // $15 input + $75 output = $45 avg (legacy)
-      'claude-3-sonnet': 9.00,     // $3 input + $15 output = $9 avg (legacy)
-      'claude-3-haiku': 0.75,      // $0.25 input + $1.25 output = $0.75 avg
-      
+      'claude-3.5-sonnet': 3.0, // $3 input + $3 output = $3 avg (25% price cut!)
+      'claude-3-opus': 45.0, // $15 input + $75 output = $45 avg (legacy)
+      'claude-3-sonnet': 9.0, // $3 input + $15 output = $9 avg (legacy)
+      'claude-3-haiku': 0.75, // $0.25 input + $1.25 output = $0.75 avg
+
       // Google Gemini 2025 (per 1M tokens, input + output average)
-      'gemini-1.5-flash': 1.00,    // $1 input + $1 output = $1 avg (new 2025 pricing!)
-      'gemini-1.5-pro': 3.125,     // $1.25 input + $5 output = $3.125 avg
-      
+      'gemini-1.5-flash': 1.0, // $1 input + $1 output = $1 avg (new 2025 pricing!)
+      'gemini-1.5-pro': 3.125, // $1.25 input + $5 output = $3.125 avg
+
       // DeepSeek V3.2-Exp 2025 (per 1M tokens, input + output average)
       // Official pricing from DeepSeek API docs (September 2025)
-      'deepseek-v3': 0.35,         // $0.28 input + $0.42 output = $0.35 avg (cache miss)
-      'deepseek-r1': 0.35,         // $0.28 input + $0.42 output = $0.35 avg (cache miss)
-      'deepseek-chat': 0.35,       // $0.28 input + $0.42 output = $0.35 avg (cache miss)
-      'deepseek-reasoner': 0.35,   // $0.28 input + $0.42 output = $0.35 avg (cache miss)
+      'deepseek-v3': 0.35, // $0.28 input + $0.42 output = $0.35 avg (cache miss)
+      'deepseek-r1': 0.35, // $0.28 input + $0.42 output = $0.35 avg (cache miss)
+      'deepseek-chat': 0.35, // $0.28 input + $0.42 output = $0.35 avg (cache miss)
+      'deepseek-reasoner': 0.35, // $0.28 input + $0.42 output = $0.35 avg (cache miss)
     };
 
-    const rate = Object.entries(staticPricing).find(([key]) => model.includes(key))?.[1] || 1.00;
+    const rate = Object.entries(staticPricing).find(([key]) => model.includes(key))?.[1] || 1.0;
     return (estimatedTokens / 1000000) * rate; // Convert to per-1M tokens
   }
 
@@ -284,7 +289,7 @@ export class CostLens {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`,
+          Authorization: `Bearer ${this.config.apiKey}`,
         },
         body: JSON.stringify(data),
       });
@@ -292,7 +297,9 @@ export class CostLens {
       if (!response.ok) {
         // Don't throw on tracking errors - just log
         if (response.status === 401 || response.status === 403) {
-          console.warn('[CostLens] Invalid API key - tracking disabled. Your app will continue to work.');
+          console.warn(
+            '[CostLens] Invalid API key - tracking disabled. Your app will continue to work.'
+          );
         } else {
           console.warn('[CostLens] Tracking failed:', response.statusText);
         }
@@ -310,12 +317,12 @@ export class CostLens {
   private getFromCache(key: string): any | null {
     const entry = this.cache.get(key);
     if (!entry) return null;
-    
+
     if (Date.now() - entry.timestamp > entry.ttl) {
       this.cache.delete(key);
       return null;
     }
-    
+
     return entry.result;
   }
 
@@ -328,32 +335,36 @@ export class CostLens {
     retries: number = this.config.maxRetries || 3
   ): Promise<T> {
     let lastError: any;
-    
+
     for (let i = 0; i < retries; i++) {
       try {
         return await fn();
       } catch (error: any) {
         lastError = error;
-        
+
         // Don't retry on client errors (4xx)
         if (error?.status >= 400 && error?.status < 500) {
           throw error;
         }
-        
+
         // Last attempt - throw error
         if (i === retries - 1) {
           throw error;
         }
-        
+
         // Exponential backoff
-        await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+        await new Promise((resolve) => setTimeout(resolve, Math.pow(2, i) * 1000));
       }
     }
-    
+
     throw lastError;
   }
 
-  private async runMiddleware(type: 'before' | 'after' | 'onError', data: any, errorContext?: ErrorContext): Promise<any> {
+  private async runMiddleware(
+    type: 'before' | 'after' | 'onError',
+    data: any,
+    errorContext?: ErrorContext
+  ): Promise<any> {
     let result = data;
     for (const mw of this.config.middleware || []) {
       if (mw[type]) {
@@ -407,18 +418,25 @@ export class CostLens {
               const estimatedCost = await self.estimateCost(params.model, params.messages);
               const limit = options?.maxCost || self.config.costLimit || Infinity;
               if (estimatedCost > limit) {
-                throw new Error(`Estimated cost $${estimatedCost.toFixed(4)} exceeds limit $${limit}`);
+                throw new Error(
+                  `Estimated cost $${estimatedCost.toFixed(4)} exceeds limit $${limit}`
+                );
               }
             }
 
             // Check cache (server-side only)
-            if (self.config.enableCache && typeof process !== 'undefined' && process.versions && process.versions.node) {
+            if (
+              self.config.enableCache &&
+              typeof process !== 'undefined' &&
+              process.versions &&
+              process.versions.node
+            ) {
               try {
                 const cacheResponse = await fetch(`${self.config.baseUrl}/api/cache/get`, {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${self.config.apiKey}`,
+                    Authorization: `Bearer ${self.config.apiKey}`,
                   },
                   body: JSON.stringify({
                     provider: 'openai',
@@ -428,7 +446,11 @@ export class CostLens {
                 });
 
                 if (cacheResponse.ok) {
-                  const cached = await cacheResponse.json() as { hit: boolean; savedCost: number; response: any };
+                  const cached = (await cacheResponse.json()) as {
+                    hit: boolean;
+                    savedCost: number;
+                    response: any;
+                  };
                   if (cached.hit) {
                     console.log(`[CostLens] Cache hit - saved $${cached.savedCost.toFixed(4)}!`);
                     return cached.response;
@@ -443,7 +465,8 @@ export class CostLens {
             params = await self.runMiddleware('before', params);
 
             const start = Date.now();
-            const fallbackModels = options?.fallbackModels || 
+            const fallbackModels =
+              options?.fallbackModels ||
               (self.config.autoFallback ? self.getDefaultFallbacks(params.model) : []);
 
             // Try main model + fallbacks
@@ -471,28 +494,37 @@ export class CostLens {
                     processedResult.choices[0]?.message?.content || '',
                     JSON.stringify(params.messages)
                   );
-                  
+
                   // If quality is too low, retry with original model
                   if (quality.qualityScore < 0.7) {
-                    console.log(`[CostLens] Quality too low (${quality.qualityScore.toFixed(2)}), retrying with ${originalModel}`);
+                    console.log(
+                      `[CostLens] Quality too low (${quality.qualityScore.toFixed(2)}), retrying with ${originalModel}`
+                    );
                     const fallbackResult = await client.chat.completions.create({
                       ...params,
                       model: originalModel,
                     });
                     return await self.runMiddleware('after', fallbackResult);
                   }
-                  
-                  console.log(`[CostLens] Quality validated: ${quality.qualityScore.toFixed(2)} score`);
+
+                  console.log(
+                    `[CostLens] Quality validated: ${quality.qualityScore.toFixed(2)} score`
+                  );
                 }
 
                 // Save to cache (server-side only)
-                if (self.config.enableCache && typeof process !== 'undefined' && process.versions && process.versions.node) {
+                if (
+                  self.config.enableCache &&
+                  typeof process !== 'undefined' &&
+                  process.versions &&
+                  process.versions.node
+                ) {
                   try {
                     await fetch(`${self.config.baseUrl}/api/cache/set`, {
                       method: 'POST',
                       headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${self.config.apiKey}`,
+                        Authorization: `Bearer ${self.config.apiKey}`,
                       },
                       body: JSON.stringify({
                         provider: 'openai',
@@ -512,7 +544,7 @@ export class CostLens {
                 // Track with fallback info
                 const inputTokens = processedResult.usage?.prompt_tokens || 0;
                 const outputTokens = processedResult.usage?.completion_tokens || 0;
-                
+
                 // Calculate savings if we routed to cheaper model
                 let savings = 0;
                 if (originalModel !== currentModel) {
@@ -520,7 +552,7 @@ export class CostLens {
                   const actualCost = await self.estimateCost(currentModel, params.messages);
                   savings = requestedCost - actualCost;
                 }
-                
+
                 await self.trackRun({
                   provider: 'openai',
                   promptId: options?.promptId,
@@ -543,7 +575,7 @@ export class CostLens {
                 return processedResult;
               } catch (error) {
                 lastError = error;
-                
+
                 // If this is the last model, throw
                 if (i === modelsToTry.length - 1) {
                   const errorContext: ErrorContext = {
@@ -555,15 +587,23 @@ export class CostLens {
                     maxRetries: modelsToTry.length,
                     userId: options?.userId,
                     promptId: options?.promptId,
-                    metadata: { originalModel, fallbackChain: modelsToTry }
+                    metadata: { originalModel, fallbackChain: modelsToTry },
                   };
                   await self.runMiddleware('onError', error, errorContext);
-                  await self.trackError('openai', currentModel, JSON.stringify(params.messages), error as Error, Date.now() - start);
+                  await self.trackError(
+                    'openai',
+                    currentModel,
+                    JSON.stringify(params.messages),
+                    error as Error,
+                    Date.now() - start
+                  );
                   throw error;
                 }
 
                 // Otherwise, try next fallback
-                console.log(`[CostLens] Fallback: ${currentModel} failed, trying ${modelsToTry[i + 1]}...`);
+                console.log(
+                  `[CostLens] Fallback: ${currentModel} failed, trying ${modelsToTry[i + 1]}...`
+                );
               }
             }
 
@@ -602,17 +642,23 @@ export class CostLens {
                     latency: Date.now() - start,
                     success: true,
                   });
-                }
+                },
               };
 
               return wrappedStream;
             } catch (error) {
-              await self.trackError('openai', params.model, JSON.stringify(params.messages), error as Error, Date.now() - start);
+              await self.trackError(
+                'openai',
+                params.model,
+                JSON.stringify(params.messages),
+                error as Error,
+                Date.now() - start
+              );
               throw error;
             }
-          }
-        }
-      }
+          },
+        },
+      },
     };
   }
 
@@ -634,7 +680,9 @@ export class CostLens {
             const estimatedCost = await self.estimateCost(params.model, params.messages);
             const limit = options?.maxCost || self.config.costLimit || Infinity;
             if (estimatedCost > limit) {
-              throw new Error(`Estimated cost $${estimatedCost.toFixed(4)} exceeds limit $${limit}`);
+              throw new Error(
+                `Estimated cost $${estimatedCost.toFixed(4)} exceeds limit $${limit}`
+              );
             }
           }
 
@@ -650,7 +698,8 @@ export class CostLens {
           params = await self.runMiddleware('before', params);
 
           const start = Date.now();
-          const fallbackModels = options?.fallbackModels || 
+          const fallbackModels =
+            options?.fallbackModels ||
             (self.config.autoFallback ? self.getDefaultFallbacks(params.model) : []);
 
           const modelsToTry = [params.model, ...fallbackModels];
@@ -680,8 +729,13 @@ export class CostLens {
                 promptId: options?.promptId,
                 model: currentModel,
                 input: JSON.stringify(params.messages),
-                output: processedResult.content[0]?.type === 'text' ? processedResult.content[0].text : '',
-                tokensUsed: (processedResult.usage?.input_tokens || 0) + (processedResult.usage?.output_tokens || 0),
+                output:
+                  processedResult.content[0]?.type === 'text'
+                    ? processedResult.content[0].text
+                    : '',
+                tokensUsed:
+                  (processedResult.usage?.input_tokens || 0) +
+                  (processedResult.usage?.output_tokens || 0),
                 latency: Date.now() - start,
                 success: true,
               });
@@ -693,7 +747,7 @@ export class CostLens {
               return processedResult;
             } catch (error) {
               lastError = error;
-              
+
               if (i === modelsToTry.length - 1) {
                 const errorContext: ErrorContext = {
                   provider: 'anthropic',
@@ -704,26 +758,36 @@ export class CostLens {
                   maxRetries: modelsToTry.length,
                   userId: options?.userId,
                   promptId: options?.promptId,
-                  metadata: { originalModel, fallbackChain: modelsToTry }
+                  metadata: { originalModel, fallbackChain: modelsToTry },
                 };
                 await self.runMiddleware('onError', error, errorContext);
-                await self.trackError('anthropic', currentModel, JSON.stringify(params.messages), error as Error, Date.now() - start);
+                await self.trackError(
+                  'anthropic',
+                  currentModel,
+                  JSON.stringify(params.messages),
+                  error as Error,
+                  Date.now() - start
+                );
                 throw error;
               }
 
-              console.log(`[CostLens] Fallback: ${currentModel} failed, trying ${modelsToTry[i + 1]}...`);
+              console.log(
+                `[CostLens] Fallback: ${currentModel} failed, trying ${modelsToTry[i + 1]}...`
+              );
             }
           }
 
           throw lastError;
-        }
-      }
+        },
+      },
     };
   }
 
   // Batch tracking for multiple calls
-  async trackBatch(calls: Array<{ provider: string; model: string; tokens: number; latency: number }>) {
-    const promises = calls.map(call => 
+  async trackBatch(
+    calls: Array<{ provider: string; model: string; tokens: number; latency: number }>
+  ) {
+    const promises = calls.map((call) =>
       this.trackRun({
         provider: call.provider,
         model: call.model,
@@ -759,22 +823,22 @@ export class CostLens {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`,
+          Authorization: `Bearer ${this.config.apiKey}`,
         },
         body: JSON.stringify({ prompt: content }),
       });
 
       if (response.ok) {
-        const data = await response.json() as { optimized: string; tokenReduction: number };
+        const data = (await response.json()) as { optimized: string; tokenReduction: number };
         const optimized = data.optimized;
-        
+
         // Cache the optimization
         this.optimizationCache.set(content, optimized);
-        
+
         console.log(`[CostLens] Optimized prompt: ${data.tokenReduction}% reduction`);
         return optimized;
       }
-      
+
       // Invalid API key - use original prompt
       if (response.status === 401 || response.status === 403) {
         console.warn('[CostLens] Invalid API key - optimization disabled');
@@ -823,12 +887,7 @@ export class CostLens {
     });
   }
 
-  async trackGemini(
-    params: any,
-    result: any,
-    latency: number,
-    promptId?: string
-  ): Promise<void> {
+  async trackGemini(params: any, result: any, latency: number, promptId?: string): Promise<void> {
     await this.trackRun({
       provider: 'gemini',
       promptId,
@@ -841,12 +900,7 @@ export class CostLens {
     });
   }
 
-  async trackGrok(
-    params: any,
-    result: any,
-    latency: number,
-    promptId?: string
-  ): Promise<void> {
+  async trackGrok(params: any, result: any, latency: number, promptId?: string): Promise<void> {
     await this.trackRun({
       provider: 'grok',
       promptId,
@@ -859,12 +913,7 @@ export class CostLens {
     });
   }
 
-  async trackDeepSeek(
-    params: any,
-    result: any,
-    latency: number,
-    promptId?: string
-  ): Promise<void> {
+  async trackDeepSeek(params: any, result: any, latency: number, promptId?: string): Promise<void> {
     await this.trackRun({
       provider: 'deepseek',
       promptId,

@@ -94,7 +94,9 @@ export class SmartCall {
     // Select cheapest model that meets quality threshold
     const selected = finalCandidates.sort((a, b) => a.cost - b.cost)[0];
 
-    console.log(`[PromptCraft SmartCall] Selected ${selected.name} (cost: $${selected.cost}, quality: ${(selected.quality * 100).toFixed(0)}%)`);
+    console.log(
+      `[PromptCraft SmartCall] Selected ${selected.name} (cost: $${selected.cost}, quality: ${(selected.quality * 100).toFixed(0)}%)`
+    );
 
     return selected.fullResponse;
   }
