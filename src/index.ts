@@ -445,7 +445,10 @@ export class CostLens {
 
             // Check in-memory cache first (works in tests and server-side)
             if (self.config.enableCache || options?.cacheTTL) {
-              const localKey = self.getCacheKey('openai', { model: params.model, messages: params.messages });
+              const localKey = self.getCacheKey('openai', {
+                model: params.model,
+                messages: params.messages,
+              });
               const localCached = self.getFromCache(localKey);
               if (localCached) {
                 console.log('[CostLens] Cache hit (memory) - $0 cost!');
@@ -541,12 +544,13 @@ export class CostLens {
                 }
 
                 // Save to cache (in-memory and remote when available)
-                if (
-                  self.config.enableCache || options?.cacheTTL
-                ) {
+                if (self.config.enableCache || options?.cacheTTL) {
                   // In-memory cache
                   try {
-                    const localKey = self.getCacheKey('openai', { model: currentModel, messages: params.messages });
+                    const localKey = self.getCacheKey('openai', {
+                      model: currentModel,
+                      messages: params.messages,
+                    });
                     const ttlMs = options?.cacheTTL ?? 3600000;
                     self.setCache(localKey, processedResult, ttlMs);
                   } catch {}
