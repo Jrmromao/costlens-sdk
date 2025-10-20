@@ -443,7 +443,17 @@ export class CostLens {
               }
             }
 
-            // Check cache (server-side only)
+            // Check in-memory cache first (works in tests and server-side)
+            if (self.config.enableCache || options?.cacheTTL) {
+              const localKey = self.getCacheKey('openai', { model: params.model, messages: params.messages });
+              const localCached = self.getFromCache(localKey);
+              if (localCached) {
+                console.log('[CostLens] Cache hit (memory) - $0 cost!');
+                return localCached;
+              }
+            }
+
+            // Check remote cache (server-side only)
             if (
               self.config.enableCache &&
               typeof process !== 'undefined' &&
@@ -530,32 +540,44 @@ export class CostLens {
                   console.log(`[CostLens] Quality validated: ${score.toFixed(2)} score`);
                 }
 
-                // Save to cache (server-side only)
+                // Save to cache (in-memory and remote when available)
                 if (
-                  self.config.enableCache &&
-                  typeof process !== 'undefined' &&
-                  process.versions &&
-                  process.versions.node
+                  self.config.enableCache || options?.cacheTTL
                 ) {
+                  // In-memory cache
                   try {
-                    await fetch(`${self.config.baseUrl}/api/cache/set`, {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${self.config.apiKey}`,
-                      },
-                      body: JSON.stringify({
-                        provider: 'openai',
-                        model: currentModel,
-                        messages: params.messages,
-                        response: processedResult,
-                        tokens: processedResult.usage?.total_tokens || 0,
-                        cost: await self.estimateCost(currentModel, params.messages),
-                        ttl: options?.cacheTTL || 3600,
-                      }),
-                    });
-                  } catch (error) {
-                    console.warn('[CostLens] Cache save failed:', error);
+                    const localKey = self.getCacheKey('openai', { model: currentModel, messages: params.messages });
+                    const ttlMs = options?.cacheTTL ?? 3600000;
+                    self.setCache(localKey, processedResult, ttlMs);
+                  } catch {}
+
+                  // Remote cache (server-side only)
+                  if (
+                    self.config.enableCache &&
+                    typeof process !== 'undefined' &&
+                    process.versions &&
+                    process.versions.node
+                  ) {
+                    try {
+                      await fetch(`${self.config.baseUrl}/api/cache/set`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${self.config.apiKey}`,
+                        },
+                        body: JSON.stringify({
+                          provider: 'openai',
+                          model: currentModel,
+                          messages: params.messages,
+                          response: processedResult,
+                          tokens: processedResult.usage?.total_tokens || 0,
+                          cost: await self.estimateCost(currentModel, params.messages),
+                          ttl: options?.cacheTTL || 3600,
+                        }),
+                      });
+                    } catch (error) {
+                      console.warn('[CostLens] Cache save failed:', error);
+                    }
                   }
                 }
 
