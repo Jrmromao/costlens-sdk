@@ -13,7 +13,10 @@ interface CostLensConfig {
   smartRouting?: boolean;
   autoOptimize?: boolean;
   costLimit?: number;
-  routingPolicy?: (requestedModel: string, messages: any[]) => Promise<string | null> | string | null;
+  routingPolicy?: (
+    requestedModel: string,
+    messages: any[]
+  ) => Promise<string | null> | string | null;
   qualityValidator?: (responseText: string, messagesJson: string) => Promise<number> | number; // return 0..1 quality score
 }
 
@@ -508,8 +511,8 @@ export class CostLens {
                 if (originalModel !== currentModel) {
                   const responseText = processedResult.choices[0]?.message?.content || '';
                   const messagesJson = JSON.stringify(params.messages);
-                  const score = this.config.qualityValidator
-                    ? await this.config.qualityValidator(responseText, messagesJson)
+                  const score = self.config.qualityValidator
+                    ? await self.config.qualityValidator(responseText, messagesJson)
                     : QualityDetector.analyzeResponse(responseText, messagesJson).qualityScore;
 
                   // If quality is too low, retry with original model
