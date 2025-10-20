@@ -185,7 +185,7 @@ describe('CostLens SDK - Unit Tests', () => {
                 choices: [{ message: { role: 'assistant', content: 'test', refusal: null }, index: 0, finish_reason: 'stop' }],
                 usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 },
             }, 100);
-            expect(global.fetch).toHaveBeenCalledWith('https://costlens.dev/api/integrations/run', expect.objectContaining({
+            expect(global.fetch).toHaveBeenCalledWith('https://api.costlens.dev/api/integrations/run', expect.objectContaining({
                 method: 'POST',
                 headers: expect.objectContaining({
                     'Authorization': 'Bearer test-key',

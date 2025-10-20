@@ -13,6 +13,8 @@ interface CostLensConfig {
   smartRouting?: boolean;
   autoOptimize?: boolean;
   costLimit?: number;
+  routingPolicy?: (requestedModel: string, messages: any[]) => Promise<string | null> | string | null;
+  qualityValidator?: (responseText: string, messagesJson: string) => Promise<number> | number; // return 0..1 quality score
 }
 
 interface WrapperOptions {
@@ -21,6 +23,8 @@ interface WrapperOptions {
   fallbackModels?: string[];
   maxCost?: number;
   userId?: string;
+  requestId?: string;
+  correlationId?: string;
 }
 
 interface TrackRunData {
@@ -37,6 +41,8 @@ interface TrackRunData {
   success: boolean;
   savings?: number;
   error?: string;
+  requestId?: string;
+  correlationId?: string;
 }
 
 interface Middleware {
@@ -79,7 +85,7 @@ export class CostLens {
     }
 
     this.config = {
-      baseUrl: 'https://costlens.dev',
+      baseUrl: 'https://api.costlens.dev',
       enableCache: false,
       maxRetries: 3,
       middleware: [],
@@ -101,6 +107,16 @@ export class CostLens {
 
   private async selectOptimalModel(requestedModel: string, messages: any[]): Promise<string> {
     if (!this.config.smartRouting) return requestedModel;
+
+    // Custom routing policy takes precedence when provided
+    if (this.config.routingPolicy) {
+      try {
+        const routed = await this.config.routingPolicy(requestedModel, messages);
+        if (routed && typeof routed === 'string') return routed;
+      } catch (e) {
+        console.warn('[CostLens] routingPolicy error (non-fatal):', e);
+      }
+    }
 
     // Don't route vision models
     if (requestedModel.includes('vision')) return requestedModel;
@@ -490,15 +506,16 @@ export class CostLens {
 
                 // Automatic quality validation for routed responses
                 if (originalModel !== currentModel) {
-                  const quality = QualityDetector.analyzeResponse(
-                    processedResult.choices[0]?.message?.content || '',
-                    JSON.stringify(params.messages)
-                  );
+                  const responseText = processedResult.choices[0]?.message?.content || '';
+                  const messagesJson = JSON.stringify(params.messages);
+                  const score = this.config.qualityValidator
+                    ? await this.config.qualityValidator(responseText, messagesJson)
+                    : QualityDetector.analyzeResponse(responseText, messagesJson).qualityScore;
 
                   // If quality is too low, retry with original model
-                  if (quality.qualityScore < 0.7) {
+                  if (score < 0.7) {
                     console.log(
-                      `[CostLens] Quality too low (${quality.qualityScore.toFixed(2)}), retrying with ${originalModel}`
+                      `[CostLens] Quality too low (${score.toFixed(2)}), retrying with ${originalModel}`
                     );
                     const fallbackResult = await client.chat.completions.create({
                       ...params,
@@ -507,9 +524,7 @@ export class CostLens {
                     return await self.runMiddleware('after', fallbackResult);
                   }
 
-                  console.log(
-                    `[CostLens] Quality validated: ${quality.qualityScore.toFixed(2)} score`
-                  );
+                  console.log(`[CostLens] Quality validated: ${score.toFixed(2)} score`);
                 }
 
                 // Save to cache (server-side only)
@@ -566,6 +581,8 @@ export class CostLens {
                   latency: Date.now() - start,
                   success: true,
                   savings,
+                  requestId: options?.requestId,
+                  correlationId: options?.correlationId,
                 });
 
                 if (!isOriginal) {
@@ -738,6 +755,8 @@ export class CostLens {
                   (processedResult.usage?.output_tokens || 0),
                 latency: Date.now() - start,
                 success: true,
+                requestId: options?.requestId,
+                correlationId: options?.correlationId,
               });
 
               if (!isOriginal) {
@@ -947,4 +966,3 @@ export class CostLens {
 }
 
 export default CostLens;
-export { CostLens as PromptCraft };

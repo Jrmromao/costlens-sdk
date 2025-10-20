@@ -7,12 +7,12 @@
 ```typescript
 const start = Date.now();
 const result = await openai.chat.completions.create(params);
-await promptcraft.trackOpenAI(params, result, Date.now() - start);
+await costlens.trackOpenAI(params, result, Date.now() - start);
 ```
 
 **After:**
 ```typescript
-const trackedOpenAI = costLens.wrapOpenAI(openai);
+const trackedOpenAI = costlens.wrapOpenAI(openai);
 const result = await trackedOpenAI.chat.completions.create(params);
 // ✅ Automatically tracked!
 ```
@@ -34,7 +34,7 @@ const result = await trackedOpenAI.chat.completions.create(
 ### 3. Auto-Retry with Exponential Backoff
 Automatically retry failed requests:
 ```typescript
-const costLens = new CostLens({
+const costlens = new CostLens({
   apiKey: 'key',
   maxRetries: 3 // Retry up to 3 times
 });
@@ -48,7 +48,7 @@ const costLens = new CostLens({
 ### 4. Middleware System
 Add custom logic to your API calls:
 ```typescript
-const costLens = new CostLens({
+const costlens = new CostLens({
   apiKey: 'key',
   middleware: [
     {
@@ -93,7 +93,7 @@ for await (const chunk of stream) {
 ### 6. Batch Tracking
 Track multiple calls efficiently:
 ```typescript
-await costLens.trackBatch([
+await costlens.trackBatch([
   { provider: 'openai', model: 'gpt-4', tokens: 100, latency: 500 },
   { provider: 'anthropic', model: 'claude-3', tokens: 150, latency: 600 }
 ]);
@@ -121,6 +121,12 @@ interface CostLensConfig {
   enableCache?: boolean;    // Optional: Enable caching (default: false)
   maxRetries?: number;      // Optional: Max retry attempts (default: 3)
   middleware?: Middleware[]; // Optional: Custom middleware
+  smartRouting?: boolean;   // Enable/disable model routing (default: true)
+  autoFallback?: boolean;   // Enable automatic fallbacks
+  autoOptimize?: boolean;   // Optimize prompt text to reduce tokens
+  costLimit?: number;       // Block requests with estimated cost above this value
+  routingPolicy?: (requestedModel: string, messages: any[]) => Promise<string | null> | string | null; // Custom routing
+  qualityValidator?: (responseText: string, messagesJson: string) => Promise<number> | number; // 0..1 score
 }
 ```
 
@@ -139,13 +145,13 @@ interface CostLensConfig {
 // v1.0 code still works
 const start = Date.now();
 const result = await openai.chat.completions.create(params);
-await promptcraft.trackOpenAI(params, result, Date.now() - start);
+await costlens.trackOpenAI(params, result, Date.now() - start);
 ```
 
 **Option 2: Upgrade to wrappers (recommended)**
 ```typescript
 // v2.0 - much simpler
-const trackedOpenAI = costLens.wrapOpenAI(openai);
+const trackedOpenAI = costlens.wrapOpenAI(openai);
 const result = await trackedOpenAI.chat.completions.create(params);
 ```
 
