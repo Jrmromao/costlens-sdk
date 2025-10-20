@@ -94,3 +94,71 @@ Visit [costlens.dev](https://costlens.dev) for full documentation.
 ## License
 
 MIT
+
+## Zero-to-Prod (Quick Win)
+
+1) Environment
+
+```bash
+export COSTLENS_API_KEY=your-costlens-key
+export OPENAI_API_KEY=your-openai-key
+export ANTHROPIC_API_KEY=your-anthropic-key # optional
+```
+
+2) Next.js API Route (pages/api/chat.ts)
+
+```ts
+import type { NextApiRequest, NextApiResponse } from 'next';
+import OpenAI from 'openai';
+import { CostLens } from 'costlens';
+
+const costlens = new CostLens({
+  apiKey: process.env.COSTLENS_API_KEY || '',
+  smartRouting: true,
+  autoFallback: true,
+});
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const ai = costlens.wrapOpenAI(openai);
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const { prompt } = req.body || {};
+  const completion = await ai.chat.completions.create({
+    model: 'gpt-4',
+    messages: [{ role: 'user', content: prompt || 'Hello!' }],
+  }, {
+    promptId: 'chat-api',
+  });
+  res.status(200).json({ text: completion.choices[0]?.message?.content || '' });
+}
+```
+
+3) Express Minimal Server
+
+```ts
+import express from 'express';
+import OpenAI from 'openai';
+import { CostLens } from 'costlens';
+
+const app = express();
+app.use(express.json());
+
+const costlens = new CostLens({
+  apiKey: process.env.COSTLENS_API_KEY || '',
+  smartRouting: true,
+});
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const ai = costlens.wrapOpenAI(openai);
+
+app.post('/chat', async (req, res) => {
+  const { prompt } = req.body || {};
+  const out = await ai.chat.completions.create({
+    model: 'gpt-4',
+    messages: [{ role: 'user', content: prompt || 'Hello!' }],
+  });
+  res.json({ text: out.choices[0]?.message?.content || '' });
+});
+
+app.listen(3000, () => console.log('http://localhost:3000'));
+```
