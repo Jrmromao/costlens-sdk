@@ -139,7 +139,7 @@ export class QualityDetector {
     if (complexity < 0.3) {
       return {
         shouldRoute: true,
-        targetModel: 'gemini-1.5-flash',
+        targetModel: 'gpt-3.5-turbo',
         confidence: 0.85,
       };
     }
