@@ -443,7 +443,7 @@ export class CostLens {
               process.versions.node
             ) {
               try {
-                    const cacheResponse = await fetch(`${self.config.baseUrl}/cache/get`, {
+                const cacheResponse = await fetch(`${self.config.baseUrl}/cache/get`, {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',

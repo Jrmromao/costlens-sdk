@@ -66,7 +66,7 @@ describe('CostLens SDK - Integration Tests', () => {
 
       // Verify tracking was called
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.costlens.dev/api/integrations/run',
+        'https://api.costlens.dev/integrations/run',
         expect.objectContaining({
           method: 'POST',
           body: expect.stringContaining('openai'),
