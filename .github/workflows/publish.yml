@@ -4,6 +4,11 @@ on:
   release:
     types: [created]
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (optional)'
+        required: false
+        type: string
 
 jobs:
   publish:
@@ -15,6 +20,8 @@ jobs:
     
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -32,14 +39,44 @@ jobs:
       - name: Build
         run: npm run build
       
+      - name: Check if package exists
+        id: check-package
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          echo "name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+          echo "version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+          echo "Checking if $PACKAGE_NAME@$PACKAGE_VERSION exists on npm..."
+          if npm view $PACKAGE_NAME@$PACKAGE_VERSION version > /dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Package $PACKAGE_NAME@$PACKAGE_VERSION already exists on npm"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Package $PACKAGE_NAME@$PACKAGE_VERSION does not exist on npm"
+          fi
+      
       - name: Publish to npm
+        if: steps.check-package.outputs.exists == 'false'
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      
+      - name: Skip publish (already exists)
+        if: steps.check-package.outputs.exists == 'true'
+        run: echo "Skipping publish - package already exists on npm"
       
       - name: Create GitHub Release Notes
         uses: actions/github-script@v7
         with:
           script: |
             const release = context.payload.release;
-            console.log(`Published ${release.tag_name} to npm!`);
+            const packageName = '${{ steps.check-package.outputs.name }}';
+            const packageVersion = '${{ steps.check-package.outputs.version }}';
+            
+            if (release && release.tag_name) {
+              console.log(`✅ Published ${packageName}@${packageVersion} to npm!`);
+              console.log(`📦 Release: ${release.tag_name}`);
+            } else {
+              console.log(`✅ Published ${packageName}@${packageVersion} to npm!`);
+              console.log('📦 Manual deployment completed');
+            }
