@@ -11,6 +11,7 @@ describe('CostLens SDK - Integration Tests', () => {
       apiKey: 'test-integration-key',
       enableCache: true,
       maxRetries: 2,
+      autoFallback: false, // Disable fallback for retry tests
     });
     (global.fetch as jest.Mock).mockClear();
     (global.fetch as jest.Mock).mockResolvedValue({

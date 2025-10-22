@@ -480,159 +480,174 @@ export class CostLens {
               options?.fallbackModels ||
               (self.config.autoFallback ? self.getDefaultFallbacks(params.model) : []);
 
-            // Try main model + fallbacks
-            const modelsToTry = [params.model, ...fallbackModels];
+            // First try the original model with retries
             let lastError: any;
+            let result: any;
+            let usedModel = params.model;
 
-            for (let i = 0; i < modelsToTry.length; i++) {
-              const currentModel = modelsToTry[i];
-              const isOriginal = i === 0;
-
-              try {
-                const result = await self.retryWithBackoff(async () => {
-                  return await client.chat.completions.create({
-                    ...params,
-                    model: currentModel,
-                  });
+            try {
+              result = await self.retryWithBackoff(async () => {
+                return await client.chat.completions.create({
+                  ...params,
+                  model: params.model,
                 });
+              });
+            } catch (error) {
+              lastError = error;
 
-                // Run after middleware
-                const processedResult = await self.runMiddleware('after', result);
+              // Only try fallback models for 5xx errors or network errors, not 4xx client errors
+              const shouldTryFallback = !(error as any)?.status || (error as any).status >= 500;
 
-                // Automatic quality validation for routed responses
-                if (originalModel !== currentModel) {
-                  const responseText = processedResult.choices[0]?.message?.content || '';
-                  const messagesJson = JSON.stringify(params.messages);
-                  const score = self.config.qualityValidator
-                    ? await self.config.qualityValidator(responseText, messagesJson)
-                    : QualityDetector.analyzeResponse(responseText, messagesJson).qualityScore;
+              if (self.config.autoFallback && fallbackModels.length > 0 && shouldTryFallback) {
+                const maxFallbacks = Math.min(fallbackModels.length, self.config.maxRetries || 3);
 
-                  // If quality is too low, retry with original model
-                  if (score < 0.7) {
-                    console.log(
-                      `[CostLens] Quality too low (${score.toFixed(2)}), retrying with ${originalModel}`
-                    );
-                    const fallbackResult = await client.chat.completions.create({
-                      ...params,
-                      model: originalModel,
-                    });
-                    return await self.runMiddleware('after', fallbackResult);
-                  }
+                for (let i = 0; i < maxFallbacks; i++) {
+                  const fallbackModel = fallbackModels[i];
 
-                  console.log(`[CostLens] Quality validated: ${score.toFixed(2)} score`);
-                }
-
-                // Save to cache (in-memory and remote when available)
-                if (self.config.enableCache || options?.cacheTTL) {
-                  // In-memory cache
                   try {
-                    const localKey = self.getCacheKey('openai', {
-                      model: currentModel,
-                      messages: params.messages,
+                    result = await client.chat.completions.create({
+                      ...params,
+                      model: fallbackModel,
                     });
-                    const ttlMs = options?.cacheTTL ?? 3600000;
-                    self.setCache(localKey, processedResult, ttlMs);
-                  } catch {}
-
-                  // Remote cache (server-side only)
-                  if (
-                    self.config.enableCache &&
-                    typeof process !== 'undefined' &&
-                    process.versions &&
-                    process.versions.node
-                  ) {
-                    try {
-                      await fetch(`${self.config.baseUrl}/api/cache/set`, {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          Authorization: `Bearer ${self.config.apiKey}`,
-                        },
-                        body: JSON.stringify({
-                          provider: 'openai',
-                          model: currentModel,
-                          messages: params.messages,
-                          response: processedResult,
-                          tokens: processedResult.usage?.total_tokens || 0,
-                          cost: await self.estimateCost(currentModel, params.messages),
-                          ttl: options?.cacheTTL || 3600,
-                        }),
-                      });
-                    } catch (error) {
-                      console.warn('[CostLens] Cache save failed:', error);
-                    }
+                    usedModel = fallbackModel;
+                    break; // Success, exit fallback loop
+                  } catch (fallbackError) {
+                    lastError = fallbackError;
+                    console.log(
+                      `[CostLens] Fallback: ${fallbackModel} failed, trying ${fallbackModels[i + 1] || 'no more models'}...`
+                    );
                   }
                 }
-
-                // Track with fallback info
-                const inputTokens = processedResult.usage?.prompt_tokens || 0;
-                const outputTokens = processedResult.usage?.completion_tokens || 0;
-
-                // Calculate savings if we routed to cheaper model
-                let savings = 0;
-                if (originalModel !== currentModel) {
-                  const requestedCost = await self.estimateCost(originalModel, params.messages);
-                  const actualCost = await self.estimateCost(currentModel, params.messages);
-                  savings = requestedCost - actualCost;
-                }
-
-                await self.trackRun({
-                  provider: 'openai',
-                  promptId: options?.promptId,
-                  model: currentModel,
-                  requestedModel: originalModel,
-                  input: JSON.stringify(params.messages),
-                  output: processedResult.choices[0]?.message?.content || '',
-                  tokensUsed: processedResult.usage?.total_tokens || 0,
-                  inputTokens,
-                  outputTokens,
-                  latency: Date.now() - start,
-                  success: true,
-                  savings,
-                  requestId: options?.requestId,
-                  correlationId: options?.correlationId,
-                });
-
-                if (!isOriginal) {
-                  console.log(`[CostLens] Fallback success: ${originalModel} → ${currentModel}`);
-                }
-
-                return processedResult;
-              } catch (error) {
-                lastError = error;
-
-                // If this is the last model, throw
-                if (i === modelsToTry.length - 1) {
-                  const errorContext: ErrorContext = {
-                    provider: 'openai',
-                    model: currentModel,
-                    input: JSON.stringify(params.messages),
-                    latency: Date.now() - start,
-                    attempt: i + 1,
-                    maxRetries: modelsToTry.length,
-                    userId: options?.userId,
-                    promptId: options?.promptId,
-                    metadata: { originalModel, fallbackChain: modelsToTry },
-                  };
-                  await self.runMiddleware('onError', error, errorContext);
-                  await self.trackError(
-                    'openai',
-                    currentModel,
-                    JSON.stringify(params.messages),
-                    error as Error,
-                    Date.now() - start
-                  );
-                  throw error;
-                }
-
-                // Otherwise, try next fallback
-                console.log(
-                  `[CostLens] Fallback: ${currentModel} failed, trying ${modelsToTry[i + 1]}...`
-                );
               }
             }
 
-            throw lastError;
+            // If we have a result, process it
+            if (result) {
+              // Run after middleware
+              const processedResult = await self.runMiddleware('after', result);
+
+              // Automatic quality validation for routed responses
+              if (originalModel !== usedModel) {
+                const responseText = processedResult.choices[0]?.message?.content || '';
+                const messagesJson = JSON.stringify(params.messages);
+                const score = self.config.qualityValidator
+                  ? await self.config.qualityValidator(responseText, messagesJson)
+                  : QualityDetector.analyzeResponse(responseText, messagesJson).qualityScore;
+
+                // If quality is too low, retry with original model
+                if (score < 0.7) {
+                  console.log(
+                    `[CostLens] Quality too low (${score.toFixed(2)}), retrying with ${originalModel}`
+                  );
+                  const fallbackResult = await client.chat.completions.create({
+                    ...params,
+                    model: originalModel,
+                  });
+                  return await self.runMiddleware('after', fallbackResult);
+                }
+
+                console.log(`[CostLens] Quality validated: ${score.toFixed(2)} score`);
+              }
+
+              // Save to cache (in-memory and remote when available)
+              if (self.config.enableCache || options?.cacheTTL) {
+                // In-memory cache
+                try {
+                  const localKey = self.getCacheKey('openai', {
+                    model: usedModel,
+                    messages: params.messages,
+                  });
+                  const ttlMs = options?.cacheTTL ?? 3600000;
+                  self.setCache(localKey, processedResult, ttlMs);
+                } catch {}
+
+                // Remote cache (server-side only)
+                if (
+                  self.config.enableCache &&
+                  typeof process !== 'undefined' &&
+                  process.versions &&
+                  process.versions.node
+                ) {
+                  try {
+                    await fetch(`${self.config.baseUrl}/api/cache/set`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${self.config.apiKey}`,
+                      },
+                      body: JSON.stringify({
+                        provider: 'openai',
+                        model: usedModel,
+                        messages: params.messages,
+                        response: processedResult,
+                        tokens: processedResult.usage?.total_tokens || 0,
+                        cost: await self.estimateCost(usedModel, params.messages),
+                        ttl: options?.cacheTTL || 3600,
+                      }),
+                    });
+                  } catch (error) {
+                    console.warn('[CostLens] Cache save failed:', error);
+                  }
+                }
+              }
+
+              // Track with fallback info
+              const inputTokens = processedResult.usage?.prompt_tokens || 0;
+              const outputTokens = processedResult.usage?.completion_tokens || 0;
+
+              // Calculate savings if we routed to cheaper model
+              let savings = 0;
+              if (originalModel !== usedModel) {
+                const requestedCost = await self.estimateCost(originalModel, params.messages);
+                const actualCost = await self.estimateCost(usedModel, params.messages);
+                savings = requestedCost - actualCost;
+              }
+
+              await self.trackRun({
+                provider: 'openai',
+                promptId: options?.promptId,
+                model: usedModel,
+                requestedModel: originalModel,
+                input: JSON.stringify(params.messages),
+                output: processedResult.choices[0]?.message?.content || '',
+                tokensUsed: processedResult.usage?.total_tokens || 0,
+                inputTokens,
+                outputTokens,
+                latency: Date.now() - start,
+                success: true,
+                savings,
+                requestId: options?.requestId,
+                correlationId: options?.correlationId,
+              });
+
+              if (originalModel !== usedModel) {
+                console.log(`[CostLens] Fallback success: ${originalModel} → ${usedModel}`);
+              }
+
+              return processedResult;
+            } else {
+              // No result, run error middleware, track the error and throw
+              const errorContext: ErrorContext = {
+                provider: 'openai',
+                model: params.model,
+                input: JSON.stringify(params.messages),
+                latency: Date.now() - start,
+                attempt: 1,
+                maxRetries: 1,
+                userId: options?.userId,
+                promptId: options?.promptId,
+                metadata: { originalModel: params.model },
+              };
+              await self.runMiddleware('onError', lastError, errorContext);
+              await self.trackError(
+                'openai',
+                params.model,
+                JSON.stringify(params.messages),
+                lastError as Error,
+                Date.now() - start
+              );
+              throw lastError;
+            }
           },
 
           // Streaming support
