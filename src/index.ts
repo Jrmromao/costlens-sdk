@@ -88,7 +88,7 @@ export class CostLens {
     }
 
     this.config = {
-      baseUrl: 'https://api.costlens.dev',
+      baseUrl: 'https://costlens.dev/api',
       enableCache: true,
       maxRetries: 3,
       middleware: [],
