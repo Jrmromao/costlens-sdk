@@ -89,10 +89,10 @@ export class CostLens {
 
     this.config = {
       baseUrl: 'https://api.costlens.dev',
-      enableCache: false,
+      enableCache: true,
       maxRetries: 3,
       middleware: [],
-      autoFallback: false,
+      autoFallback: true,
       smartRouting: true, // ON by default
       ...config,
     };
@@ -251,28 +251,7 @@ export class CostLens {
     const estimatedTokens =
       messages.reduce((sum, m) => sum + (m.content?.length || 0) / 4, 0) * 1.5;
 
-    try {
-      // Try to get pricing from database first
-      const response = await fetch(`${this.config.baseUrl}/api/pricing/scrape`);
-      if (response.ok) {
-        const data = (await response.json()) as { success: boolean; data?: any[] };
-        if (data.success && data.data) {
-          const pricingData = data.data.find(
-            (p: any) =>
-              p.model.toLowerCase().includes(model.toLowerCase()) ||
-              model.toLowerCase().includes(p.model.toLowerCase())
-          );
-
-          if (pricingData) {
-            return (estimatedTokens / 1000000) * pricingData.averageCost;
-          }
-        }
-      }
-    } catch (error) {
-      console.warn(`[CostLens] Failed to fetch dynamic pricing for ${model}, using fallback`);
-    }
-
-    // Fallback to static pricing
+    // Use static pricing only - no dynamic pricing fetch to avoid errors
     const staticPricing: Record<string, number> = {
       // OpenAI 2025 (per 1M tokens, input + output average)
       'gpt-4o': 6.25, // $2.50 input + $10 output = $6.25 avg
