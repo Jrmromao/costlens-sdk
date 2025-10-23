@@ -15,12 +15,6 @@
     "test:coverage": "jest --coverage",
     "test:load": "jest tests/load.test.ts",
     "load-test": "ts-node scripts/load-test.ts",
-    "load-test:quick": "ts-node scripts/load-test.ts --quick",
-    "load-test:stress": "ts-node scripts/load-test.ts --stress",
-    "load-test:custom": "ts-node scripts/load-test.ts --custom",
-    "load-test:endurance": "ts-node scripts/load-test.ts --endurance",
-    "release-notes": "node scripts/generate-release-notes.js",
-    "release-notes:version": "node scripts/generate-release-notes.js",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "prepare": "husky install"
