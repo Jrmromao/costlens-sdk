@@ -3,3 +3,7 @@ dist
 *.tgz
 .DS_Store
 INTERNAL-CHANGES.md
+
+coverage/** 
+
+LOAD_TESTING.md

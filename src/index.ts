@@ -88,7 +88,7 @@ export class CostLens {
     }
 
     this.config = {
-      baseUrl: 'https://costlens.dev/api',
+      baseUrl: 'https://api.costlens.dev',
       enableCache: true,
       maxRetries: 3,
       middleware: [],
@@ -170,7 +170,7 @@ export class CostLens {
 
   private async checkRoutingEnabled(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.config.baseUrl}/quality/routing`, {
+      const response = await fetch(`${this.config.baseUrl}/api/quality/routing`, {
         headers: {
           Authorization: `Bearer ${this.config.apiKey}`,
         },
@@ -443,7 +443,7 @@ export class CostLens {
               process.versions.node
             ) {
               try {
-                const cacheResponse = await fetch(`${self.config.baseUrl}/cache/get`, {
+                const cacheResponse = await fetch(`${self.config.baseUrl}/api/cache/get`, {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
@@ -569,7 +569,7 @@ export class CostLens {
                   process.versions.node
                 ) {
                   try {
-                    await fetch(`${self.config.baseUrl}/cache/set`, {
+                    await fetch(`${self.config.baseUrl}/api/cache/set`, {
                       method: 'POST',
                       headers: {
                         'Content-Type': 'application/json',
@@ -861,7 +861,7 @@ export class CostLens {
     }
 
     try {
-      const response = await fetch(`${this.config.baseUrl}/prompts/optimize`, {
+      const response = await fetch(`${this.config.baseUrl}/api/prompts/optimize`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
