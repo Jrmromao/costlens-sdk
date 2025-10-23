@@ -52,3 +52,57 @@ jobs:
       
       - name: Check formatting
         run: npx prettier --check "src/**/*.ts"
+
+  version-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      
+      - name: Check for version bump commits
+        id: version-check
+        run: |
+          # Check if the last commit message contains version bump keywords
+          LAST_COMMIT=$(git log -1 --pretty=%B)
+          echo "Last commit: $LAST_COMMIT"
+          
+          if echo "$LAST_COMMIT" | grep -E "(feat|feature|major):" > /dev/null; then
+            echo "bump_type=major" >> $GITHUB_OUTPUT
+            echo "Version bump detected: MAJOR"
+          elif echo "$LAST_COMMIT" | grep -E "(feat|feature|minor):" > /dev/null; then
+            echo "bump_type=minor" >> $GITHUB_OUTPUT
+            echo "Version bump detected: MINOR"
+          elif echo "$LAST_COMMIT" | grep -E "(fix|patch):" > /dev/null; then
+            echo "bump_type=patch" >> $GITHUB_OUTPUT
+            echo "Version bump detected: PATCH"
+          else
+            echo "bump_type=" >> $GITHUB_OUTPUT
+            echo "No version bump detected"
+          fi
+      
+      - name: Trigger version bump
+        if: steps.version-check.outputs.bump_type != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const bumpType = '${{ steps.version-check.outputs.bump_type }}';
+            console.log(`Triggering ${bumpType} version bump...`);
+            
+            // Trigger the version-bump workflow
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'version-bump.yml',
+              ref: 'main',
+              inputs: {
+                version: bumpType
+              }
+            });

@@ -1,0 +1,183 @@
+name: Auto Version Bump
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force_version:
+        description: 'Force specific version (optional)'
+        required: false
+        type: string
+
+jobs:
+  auto-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Get current version
+        id: current-version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+      
+      - name: Analyze commits for version bump
+        id: analyze-commits
+        run: |
+          # Get commits since last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            echo "No previous tags found, checking all commits"
+            COMMITS_TO_CHECK=$(git log --oneline)
+          else
+            echo "Checking commits since $LAST_TAG"
+            COMMITS_TO_CHECK=$(git log $LAST_TAG..HEAD --oneline)
+          fi
+          
+          echo "Commits to analyze:"
+          echo "$COMMITS_TO_CHECK"
+          
+          # Check for breaking changes (major)
+          if echo "$COMMITS_TO_CHECK" | grep -E "(BREAKING CHANGE|!):" > /dev/null; then
+            echo "bump_type=major" >> $GITHUB_OUTPUT
+            echo "reason=Breaking changes detected" >> $GITHUB_OUTPUT
+          # Check for new features (minor)
+          elif echo "$COMMITS_TO_CHECK" | grep -E "^(feat|feature)(\(.+\))?!?:" > /dev/null; then
+            echo "bump_type=minor" >> $GITHUB_OUTPUT
+            echo "reason=New features detected" >> $GITHUB_OUTPUT
+          # Check for fixes (patch)
+          elif echo "$COMMITS_TO_CHECK" | grep -E "^(fix|patch)(\(.+\))?!?:" > /dev/null; then
+            echo "bump_type=patch" >> $GITHUB_OUTPUT
+            echo "reason=Bug fixes detected" >> $GITHUB_OUTPUT
+          else
+            echo "bump_type=" >> $GITHUB_OUTPUT
+            echo "reason=No version-worthy changes detected" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Check if version bump needed
+        id: should-bump
+        run: |
+          if [ -n "${{ github.event.inputs.force_version }}" ]; then
+            echo "should_bump=true" >> $GITHUB_OUTPUT
+            echo "bump_type=${{ github.event.inputs.force_version }}" >> $GITHUB_OUTPUT
+            echo "reason=Manual version bump requested" >> $GITHUB_OUTPUT
+          elif [ -n "${{ steps.analyze-commits.outputs.bump_type }}" ]; then
+            echo "should_bump=true" >> $GITHUB_OUTPUT
+            echo "bump_type=${{ steps.analyze-commits.outputs.bump_type }}" >> $GITHUB_OUTPUT
+            echo "reason=${{ steps.analyze-commits.outputs.reason }}" >> $GITHUB_OUTPUT
+          else
+            echo "should_bump=false" >> $GITHUB_OUTPUT
+            echo "No version bump needed"
+          fi
+      
+      - name: Bump version
+        if: steps.should-bump.outputs.should_bump == 'true'
+        run: |
+          BUMP_TYPE="${{ steps.should-bump.outputs.bump_type }}"
+          REASON="${{ steps.should-bump.outputs.reason }}"
+          
+          echo "Bumping $BUMP_TYPE version..."
+          echo "Reason: $REASON"
+          
+          # Bump version
+          npm version $BUMP_TYPE -m "chore: $BUMP_TYPE version bump - $REASON"
+          
+          # Get new version
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          echo "New version: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Push changes
+        if: steps.should-bump.outputs.should_bump == 'true'
+        run: |
+          git push --follow-tags
+          echo "✅ Version bumped and pushed to repository"
+      
+      - name: Generate Release Notes
+        if: steps.should-bump.outputs.should_bump == 'true'
+        run: |
+          VERSION="${{ steps.should-bump.outputs.new_version }}"
+          PREV_VERSION="${{ steps.current-version.outputs.version }}"
+          
+          echo "📝 Generating release notes for v$VERSION"
+          
+          # Generate release notes using the script
+          node scripts/generate-release-notes.js "$VERSION" "v$PREV_VERSION"
+          
+          # Read the generated release notes
+          if [ -f "RELEASE_NOTES.md" ]; then
+            echo "✅ Release notes generated successfully"
+            cat RELEASE_NOTES.md
+          else
+            echo "❌ Failed to generate release notes, using fallback"
+            # Fallback release notes
+            cat > RELEASE_NOTES.md << EOF
+          # 🚀 CostLens SDK v$VERSION
+          
+          ## What's Changed
+          
+          ${{ steps.should-bump.outputs.reason }}
+          
+          ### Version Bump: ${{ steps.should-bump.outputs.bump_type }}
+          
+          **Previous Version:** $PREV_VERSION  
+          **New Version:** $VERSION
+          
+          ## 📦 Installation
+          
+          \`\`\`bash
+          npm install costlens@$VERSION
+          \`\`\`
+          
+          ---
+          
+          This release was automatically created by the Auto Version Bump workflow.
+          EOF
+          fi
+      
+      - name: Get Release Notes
+        if: steps.should-bump.outputs.should_bump == 'true'
+        id: release-notes
+        run: |
+          if [ -f "RELEASE_NOTES.md" ]; then
+            echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+            cat RELEASE_NOTES.md >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "❌ No release notes found"
+            exit 1
+          fi
+      
+      - name: Create Release
+        if: steps.should-bump.outputs.should_bump == 'true'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.should-bump.outputs.new_version }}
+          release_name: Release v${{ steps.should-bump.outputs.new_version }}
+          body: ${{ steps.release-notes.outputs.release_notes }}
+          draft: false
+          prerelease: false
+      
+      - name: Skip version bump
+        if: steps.should-bump.outputs.should_bump == 'false'
+        run: |
+          echo "ℹ️ No version bump needed"
+          echo "Reason: ${{ steps.analyze-commits.outputs.reason }}"

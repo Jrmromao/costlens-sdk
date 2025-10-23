@@ -1,0 +1,324 @@
+name: Generate Release Notes
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to generate notes for (optional)'
+        required: false
+        type: string
+
+jobs:
+  generate-notes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      
+      - name: Get version info
+        id: version-info
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(node -p "require('./package.json').version")
+          fi
+          
+          # Get previous version
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            PREV_TAG=$(git rev-list --max-parents=0 HEAD)
+            echo "No previous tag found, using first commit"
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "prev_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+          echo "current_tag=v$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Analyze commits
+        id: analyze-commits
+        run: |
+          PREV_TAG="${{ steps.version-info.outputs.prev_tag }}"
+          CURRENT_TAG="${{ steps.version-info.outputs.current_tag }}"
+          
+          echo "Analyzing commits from $PREV_TAG to $CURRENT_TAG"
+          
+          # Get commits in the range
+          if [ "$PREV_TAG" = "$(git rev-list --max-parents=0 HEAD)" ]; then
+            COMMITS=$(git log --pretty=format:"%h|%s|%an|%ad" --date=short)
+          else
+            COMMITS=$(git log $PREV_TAG..HEAD --pretty=format:"%h|%s|%an|%ad" --date=short)
+          fi
+          
+          echo "Found commits:"
+          echo "$COMMITS"
+          
+          # Categorize commits
+          FEATURES=$(echo "$COMMITS" | grep -E "^(feat|feature)(\(.+\))?!?:" | wc -l)
+          FIXES=$(echo "$COMMITS" | grep -E "^(fix|patch)(\(.+\))?!?:" | wc -l)
+          BREAKING=$(echo "$COMMITS" | grep -E "(BREAKING CHANGE|!):" | wc -l)
+          DOCS=$(echo "$COMMITS" | grep -E "^(docs|doc):" | wc -l)
+          TESTS=$(echo "$COMMITS" | grep -E "^(test|tests):" | wc -l)
+          REFACTOR=$(echo "$COMMITS" | grep -E "^(refactor|refactoring):" | wc -l)
+          PERF=$(echo "$COMMITS" | grep -E "^(perf|performance):" | wc -l)
+          CHORE=$(echo "$COMMITS" | grep -E "^(chore|maintenance):" | wc -l)
+          
+          echo "features=$FEATURES" >> $GITHUB_OUTPUT
+          echo "fixes=$FIXES" >> $GITHUB_OUTPUT
+          echo "breaking=$BREAKING" >> $GITHUB_OUTPUT
+          echo "docs=$DOCS" >> $GITHUB_OUTPUT
+          echo "tests=$TESTS" >> $GITHUB_OUTPUT
+          echo "refactor=$REFACTOR" >> $GITHUB_OUTPUT
+          echo "perf=$PERF" >> $GITHUB_OUTPUT
+          echo "chore=$CHORE" >> $GITHUB_OUTPUT
+      
+      - name: Generate detailed commit lists
+        id: commit-lists
+        run: |
+          PREV_TAG="${{ steps.version-info.outputs.prev_tag }}"
+          
+          if [ "$PREV_TAG" = "$(git rev-list --max-parents=0 HEAD)" ]; then
+            COMMITS=$(git log --pretty=format:"%h|%s|%an|%ad" --date=short)
+          else
+            COMMITS=$(git log $PREV_TAG..HEAD --pretty=format:"%h|%s|%an|%ad" --date=short)
+          fi
+          
+          # Generate categorized lists
+          FEATURES_LIST=$(echo "$COMMITS" | grep -E "^(feat|feature)(\(.+\))?!?:" | sed 's/^/- /' | head -10)
+          FIXES_LIST=$(echo "$COMMITS" | grep -E "^(fix|patch)(\(.+\))?!?:" | sed 's/^/- /' | head -10)
+          BREAKING_LIST=$(echo "$COMMITS" | grep -E "(BREAKING CHANGE|!):" | sed 's/^/- /' | head -10)
+          DOCS_LIST=$(echo "$COMMITS" | grep -E "^(docs|doc):" | sed 's/^/- /' | head -10)
+          TESTS_LIST=$(echo "$COMMITS" | grep -E "^(test|tests):" | sed 's/^/- /' | head -10)
+          REFACTOR_LIST=$(echo "$COMMITS" | grep -E "^(refactor|refactoring):" | sed 's/^/- /' | head -10)
+          PERF_LIST=$(echo "$COMMITS" | grep -E "^(perf|performance):" | sed 's/^/- /' | head -10)
+          CHORE_LIST=$(echo "$COMMITS" | grep -E "^(chore|maintenance):" | sed 's/^/- /' | head -10)
+          
+          # Store in outputs (with proper escaping)
+          echo "features_list<<EOF" >> $GITHUB_OUTPUT
+          echo "$FEATURES_LIST" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "fixes_list<<EOF" >> $GITHUB_OUTPUT
+          echo "$FIXES_LIST" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "breaking_list<<EOF" >> $GITHUB_OUTPUT
+          echo "$BREAKING_LIST" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "docs_list<<EOF" >> $GITHUB_OUTPUT
+          echo "$DOCS_LIST" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "tests_list<<EOF" >> $GITHUB_OUTPUT
+          echo "$TESTS_LIST" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "refactor_list<<EOF" >> $GITHUB_OUTPUT
+          echo "$REFACTOR_LIST" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "perf_list<<EOF" >> $GITHUB_OUTPUT
+          echo "$PERF_LIST" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "chore_list<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHORE_LIST" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          VERSION="${{ steps.version-info.outputs.version }}"
+          FEATURES="${{ steps.analyze-commits.outputs.features }}"
+          FIXES="${{ steps.analyze-commits.outputs.fixes }}"
+          BREAKING="${{ steps.analyze-commits.outputs.breaking }}"
+          DOCS="${{ steps.analyze-commits.outputs.docs }}"
+          TESTS="${{ steps.analyze-commits.outputs.tests }}"
+          REFACTOR="${{ steps.analyze-commits.outputs.refactor }}"
+          PERF="${{ steps.analyze-commits.outputs.perf }}"
+          CHORE="${{ steps.analyze-commits.outputs.chore }}"
+          
+          # Determine release type
+          if [ "$BREAKING" -gt 0 ]; then
+            RELEASE_TYPE="🚨 **MAJOR RELEASE**"
+            EMOJI="🚨"
+          elif [ "$FEATURES" -gt 0 ]; then
+            RELEASE_TYPE="✨ **MINOR RELEASE**"
+            EMOJI="✨"
+          else
+            RELEASE_TYPE="🔧 **PATCH RELEASE**"
+            EMOJI="🔧"
+          fi
+          
+          # Generate release notes
+          cat > release_notes.md << EOF
+          # $EMOJI CostLens SDK v$VERSION
+          
+          $RELEASE_TYPE
+          
+          ## 📊 Release Summary
+          
+          | Type | Count | Description |
+          |------|-------|-------------|
+          | 🆕 Features | $FEATURES | New functionality and enhancements |
+          | 🐛 Fixes | $FIXES | Bug fixes and improvements |
+          | 💥 Breaking | $BREAKING | Breaking changes requiring attention |
+          | 📚 Docs | $DOCS | Documentation updates |
+          | 🧪 Tests | $TESTS | Test improvements and additions |
+          | ♻️ Refactor | $REFACTOR | Code refactoring and cleanup |
+          | ⚡ Performance | $PERF | Performance improvements |
+          | 🔧 Chore | $CHORE | Maintenance and housekeeping |
+          
+          ## 🎯 What's New
+          
+          EOF
+          
+          # Add features section
+          if [ "$FEATURES" -gt 0 ]; then
+            echo "### ✨ New Features ($FEATURES)" >> release_notes.md
+            echo "" >> release_notes.md
+            echo "${{ steps.commit-lists.outputs.features_list }}" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+          
+          # Add fixes section
+          if [ "$FIXES" -gt 0 ]; then
+            echo "### 🐛 Bug Fixes ($FIXES)" >> release_notes.md
+            echo "" >> release_notes.md
+            echo "${{ steps.commit-lists.outputs.fixes_list }}" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+          
+          # Add breaking changes section
+          if [ "$BREAKING" -gt 0 ]; then
+            echo "### 💥 Breaking Changes ($BREAKING)" >> release_notes.md
+            echo "" >> release_notes.md
+            echo "> ⚠️ **Important**: This release contains breaking changes. Please review the migration guide below." >> release_notes.md
+            echo "" >> release_notes.md
+            echo "${{ steps.commit-lists.outputs.breaking_list }}" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+          
+          # Add other sections
+          if [ "$DOCS" -gt 0 ]; then
+            echo "### 📚 Documentation Updates ($DOCS)" >> release_notes.md
+            echo "" >> release_notes.md
+            echo "${{ steps.commit-lists.outputs.docs_list }}" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+          
+          if [ "$TESTS" -gt 0 ]; then
+            echo "### 🧪 Test Improvements ($TESTS)" >> release_notes.md
+            echo "" >> release_notes.md
+            echo "${{ steps.commit-lists.outputs.tests_list }}" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+          
+          if [ "$REFACTOR" -gt 0 ]; then
+            echo "### ♻️ Code Refactoring ($REFACTOR)" >> release_notes.md
+            echo "" >> release_notes.md
+            echo "${{ steps.commit-lists.outputs.refactor_list }}" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+          
+          if [ "$PERF" -gt 0 ]; then
+            echo "### ⚡ Performance Improvements ($PERF)" >> release_notes.md
+            echo "" >> release_notes.md
+            echo "${{ steps.commit-lists.outputs.perf_list }}" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+          
+          if [ "$CHORE" -gt 0 ]; then
+            echo "### 🔧 Maintenance ($CHORE)" >> release_notes.md
+            echo "" >> release_notes.md
+            echo "${{ steps.commit-lists.outputs.chore_list }}" >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+          
+          # Add footer
+          cat >> release_notes.md << EOF
+          
+          ## 📦 Installation
+          
+          \`\`\`bash
+          npm install costlens@$VERSION
+          # or
+          yarn add costlens@$VERSION
+          # or
+          pnpm add costlens@$VERSION
+          \`\`\`
+          
+          ## 🔗 Links
+          
+          - 📖 [Documentation](https://github.com/${{ github.repository }}/blob/main/README.md)
+          - 🐛 [Report Issues](https://github.com/${{ github.repository }}/issues)
+          - 💬 [Discussions](https://github.com/${{ github.repository }}/discussions)
+          - 📋 [Changelog](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+          
+          ## 🙏 Contributors
+          
+          Thank you to all contributors who made this release possible!
+          
+          ---
+          
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.version-info.outputs.prev_tag }}...v$VERSION
+          EOF
+          
+          # Output the release notes
+          cat release_notes.md
+          
+          # Store in output for use in other steps
+          echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+          cat release_notes.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Save release notes
+        run: |
+          echo "${{ steps.release-notes.outputs.release_notes }}" > RELEASE_NOTES.md
+          echo "✅ Release notes saved to RELEASE_NOTES.md"
+      
+      - name: Upload release notes artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes-v${{ steps.version-info.outputs.version }}
+          path: RELEASE_NOTES.md
+          retention-days: 30
+      
+      - name: Comment on PR (if applicable)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const releaseNotes = `${{ steps.release-notes.outputs.release_notes }}`;
+            const version = '${{ steps.version-info.outputs.version }}';
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 📝 Release Notes Preview for v${version}\n\n${releaseNotes}`
+            });
+      
+      - name: Summary
+        run: |
+          echo "## 📝 Release Notes Generated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version-info.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Features:** ${{ steps.analyze-commits.outputs.features }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Fixes:** ${{ steps.analyze-commits.outputs.fixes }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Breaking Changes:** ${{ steps.analyze-commits.outputs.breaking }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Release notes have been generated and saved as an artifact." >> $GITHUB_STEP_SUMMARY
