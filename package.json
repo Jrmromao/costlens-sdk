@@ -1,7 +1,7 @@
 {
   "name": "costlens",
   "version": "1.2.0",
-  "description": "Smart AI cost optimization with quality-aware routing. Automatically routes expensive models to cheaper alternatives while maintaining quality.",
+  "description": "Smart AI cost optimization with multi-provider routing, model enforcement, and quality validation. Automatically routes requests across providers while maintaining quality and preventing downgrades.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -32,7 +32,13 @@
     "llm",
     "gpt",
     "monitoring",
-    "developer-tools"
+    "developer-tools",
+    "multi-provider",
+    "model-enforcement",
+    "quality-validation",
+    "routing-strategies",
+    "api-key-management",
+    "batch-processing"
   ],
   "author": "CostLens.dev",
   "license": "MIT",

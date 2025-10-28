@@ -1,9 +1,18 @@
-# CostLens SDK
+# CostLens SDK v2.0
 
 [![npm version](https://img.shields.io/npm/v/costlens)](https://www.npmjs.com/package/costlens)
 [![npm downloads](https://img.shields.io/npm/dm/costlens)](https://www.npmjs.com/package/costlens)
 
-Smart AI cost optimization with quality-aware routing. Automatically routes expensive models (GPT-4, Claude Opus) to cheaper alternatives while maintaining quality. Save 70-95% on OpenAI & Anthropic API costs.
+Smart AI cost optimization with **multi-provider routing**, **model enforcement**, and **quality validation**. Automatically routes requests across providers while maintaining quality and preventing downgrades. Save 70-95% on AI API costs.
+
+## 🚀 New in v2.0
+
+- **Multi-Provider Configuration**: Route requests across OpenAI, Anthropic, Google, and DeepSeek
+- **Model Enforcement**: Prevent unwanted model downgrades
+- **Quality Validation**: Ensure response quality meets your standards
+- **Routing Strategies**: Choose between balanced, quality-first, or cost-first routing
+- **API Key Management**: Securely manage provider API keys
+- **Enhanced Batch Processing**: Process multiple requests efficiently
 
 ## Installation
 
@@ -18,7 +27,7 @@ import { CostLens } from 'costlens';
 
 const costlens = new CostLens({
   apiKey: 'your-costlens-api-key',
-  smartRouting: true
+  smartRouting: true,
 });
 
 // OpenAI with smart routing
@@ -28,7 +37,7 @@ const ai = costlens.wrapOpenAI(openai);
 
 const response = await ai.chat.completions.create({
   model: 'gpt-4', // May be routed to gpt-3.5-turbo for cost savings
-  messages: [{ role: 'user', content: 'Hello!' }]
+  messages: [{ role: 'user', content: 'Hello!' }],
 });
 ```
 
@@ -44,7 +53,10 @@ const costlens = new CostLens({
   costLimit: 0.05,
   routingPolicy: (requestedModel, messages) => {
     // Example: pin analysis tasks to gpt-4o
-    const text = (messages || []).map(m => m.content).join(' ').toLowerCase();
+    const text = (messages || [])
+      .map((m) => m.content)
+      .join(' ')
+      .toLowerCase();
     if (/analy(z|s)e|evaluate|compare/.test(text) && requestedModel === 'gpt-4') {
       return 'gpt-4o';
     }
@@ -60,22 +72,23 @@ const costlens = new CostLens({
 });
 
 // Including request/correlation IDs in tracking
-await ai.chat.completions.create({
-  model: 'gpt-4',
-  messages: [{ role: 'user', content: 'Hi' }]
-}, {
-  promptId: 'msg-1',
-  requestId: 'req_abc123',
-  correlationId: 'corr_session_42'
-});
+await ai.chat.completions.create(
+  {
+    model: 'gpt-4',
+    messages: [{ role: 'user', content: 'Hi' }],
+  },
+  {
+    promptId: 'msg-1',
+    requestId: 'req_abc123',
+    correlationId: 'corr_session_42',
+  }
+);
 ```
 
 ## Configuration
 
 - The SDK is hosted by CostLens; no custom API URL is required. The default `baseUrl` is `https://api.costlens.dev` and is used for smart routing, tracking, caching, and prompt optimization.
 - Overriding `baseUrl` is generally unnecessary and only for internal/proxy scenarios:
-
-
 
 - An API key enables routing/analytics. Without it, these features are disabled gracefully.
 
@@ -97,7 +110,7 @@ MIT
 
 ## Zero-to-Prod (Quick Win)
 
-1) Environment
+1. Environment
 
 ```bash
 export COSTLENS_API_KEY=your-costlens-key
@@ -105,7 +118,7 @@ export OPENAI_API_KEY=your-openai-key
 export ANTHROPIC_API_KEY=your-anthropic-key # optional
 ```
 
-2) Next.js API Route (pages/api/chat.ts)
+2. Next.js API Route (pages/api/chat.ts)
 
 ```ts
 import type { NextApiRequest, NextApiResponse } from 'next';
@@ -123,17 +136,20 @@ const ai = costlens.wrapOpenAI(openai);
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { prompt } = req.body || {};
-  const completion = await ai.chat.completions.create({
-    model: 'gpt-4',
-    messages: [{ role: 'user', content: prompt || 'Hello!' }],
-  }, {
-    promptId: 'chat-api',
-  });
+  const completion = await ai.chat.completions.create(
+    {
+      model: 'gpt-4',
+      messages: [{ role: 'user', content: prompt || 'Hello!' }],
+    },
+    {
+      promptId: 'chat-api',
+    }
+  );
   res.status(200).json({ text: completion.choices[0]?.message?.content || '' });
 }
 ```
 
-3) Express Minimal Server
+3. Express Minimal Server
 
 ```ts
 import express from 'express';

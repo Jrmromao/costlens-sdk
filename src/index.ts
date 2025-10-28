@@ -18,6 +18,15 @@ interface CostLensConfig {
     messages: any[]
   ) => Promise<string | null> | string | null;
   qualityValidator?: (responseText: string, messagesJson: string) => Promise<number> | number; // return 0..1 quality score
+
+  // NEW: Multi-provider configuration
+  providers?: ProviderConfig[];
+  routingStrategy?: 'balanced' | 'quality-first' | 'cost-first' | 'custom';
+  enforceModel?: boolean;
+  qualityThreshold?: number;
+  enableQualityValidation?: boolean;
+  enableBatchProcessing?: boolean;
+  enableCircuitBreaker?: boolean;
 }
 
 interface WrapperOptions {
@@ -71,6 +80,69 @@ interface CacheEntry {
   timestamp: number;
   ttl: number;
   lastAccessed?: number;
+}
+
+// NEW: Multi-provider interfaces
+interface ProviderConfig {
+  provider: string;
+  model?: string;
+  weight: number;
+  minQuality: number;
+  enforceModel: boolean;
+  routingStrategy: string;
+  apiKeyEncrypted?: string;
+  enabled: boolean;
+}
+
+interface QualityValidator {
+  threshold: number;
+  enabled: boolean;
+  metrics: string[];
+}
+
+interface QualityScore {
+  overall: number;
+  coherence: number;
+  completeness: number;
+  relevance: number;
+  passed: boolean;
+}
+
+interface RoutingDecision {
+  selectedModel: string;
+  provider: string;
+  originalModel: string;
+  confidence: number;
+  reasoning: string;
+  estimatedCost: number;
+  qualityScore: number;
+}
+
+interface RoutingOptions {
+  enforceModel?: boolean;
+  qualityThreshold?: number;
+  maxCost?: number;
+  strategy?: string;
+}
+
+interface ProviderApiKey {
+  id: string;
+  provider: string;
+  createdAt: string;
+  lastUsedAt?: string;
+}
+
+interface BatchRequest {
+  model: string;
+  prompt: string;
+  options?: RoutingOptions;
+}
+
+interface BatchResult {
+  success: boolean;
+  result?: any;
+  error?: string;
+  routingDecision?: RoutingDecision;
 }
 
 export class CostLens {
@@ -950,74 +1022,6 @@ export class CostLens {
   // Batch tracking for multiple calls with optimization
   private batchQueue: TrackRunData[] = [];
   private batchTimeout: NodeJS.Timeout | null = null;
-  private readonly BATCH_SIZE = 10;
-  private readonly BATCH_DELAY = 1000; // 1 second
-
-  async trackBatch(
-    calls: Array<{ provider: string; model: string; tokens: number; latency: number }>
-  ) {
-    // In test environments, process each call individually to match test expectations
-    if (process.env.NODE_ENV === 'test') {
-      for (const call of calls) {
-        const batchData = {
-          provider: call.provider,
-          model: call.model,
-          input: '',
-          output: '',
-          tokensUsed: call.tokens,
-          latency: call.latency,
-          success: true,
-        };
-        await this.processBatch([batchData]);
-      }
-      return;
-    }
-
-    // Add to batch queue for production
-    const batchData = calls.map((call) => ({
-      provider: call.provider,
-      model: call.model,
-      input: '',
-      output: '',
-      tokensUsed: call.tokens,
-      latency: call.latency,
-      success: true,
-    }));
-
-    this.batchQueue.push(...batchData);
-
-    // Process batch if full or schedule processing
-    if (this.batchQueue.length >= this.BATCH_SIZE) {
-      await this.processBatch();
-    } else if (!this.batchTimeout) {
-      this.batchTimeout = setTimeout(() => this.processBatch(), this.BATCH_DELAY);
-    }
-  }
-
-  private async processBatch(batchData?: TrackRunData[]): Promise<void> {
-    const batch = batchData || this.batchQueue.splice(0, this.BATCH_SIZE);
-    if (batch.length === 0) return;
-
-    this.batchTimeout = null;
-
-    try {
-      // Send batch to API
-      const response = await fetch(`${this.config.baseUrl}/integrations/batch`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.config.apiKey}`,
-        },
-        body: JSON.stringify({ runs: batch }),
-      });
-
-      if (!response.ok) {
-        console.warn('[CostLens] Batch tracking failed:', response.statusText);
-      }
-    } catch (error) {
-      console.warn('[CostLens] Batch tracking error:', error);
-    }
-  }
 
   // Clear cache
   clearCache(): void {
@@ -1204,6 +1208,411 @@ export class CostLens {
       success: false,
       error: error.message,
     });
+  }
+
+  // NEW: Multi-provider configuration methods
+  async configureProviders(config: ProviderConfig[]): Promise<void> {
+    try {
+      const response = await fetch(`${this.config.baseUrl}/api/providers/config`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify(config),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to configure providers: ${response.statusText}`);
+      }
+
+      const result = (await response.json()) as { success: boolean; error?: string };
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to configure providers');
+      }
+    } catch (error) {
+      console.error('[CostLens] Provider configuration failed:', error);
+      throw error;
+    }
+  }
+
+  async getProviderConfig(): Promise<ProviderConfig[]> {
+    try {
+      const response = await fetch(`${this.config.baseUrl}/api/providers/config`, {
+        headers: {
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to get provider config: ${response.statusText}`);
+      }
+
+      const result = (await response.json()) as { configs?: any[] };
+      return result.configs || [];
+    } catch (error) {
+      console.error('[CostLens] Failed to get provider config:', error);
+      throw error;
+    }
+  }
+
+  // NEW: Model enforcement methods
+  async enableModelEnforcement(enabled: boolean): Promise<void> {
+    try {
+      const response = await fetch(`${this.config.baseUrl}/api/routing/enforcement`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify({ enforceModel: enabled }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to set model enforcement: ${response.statusText}`);
+      }
+
+      const result = (await response.json()) as { success: boolean; error?: string };
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to set model enforcement');
+      }
+    } catch (error) {
+      console.error('[CostLens] Model enforcement configuration failed:', error);
+      throw error;
+    }
+  }
+
+  validateModelConsistency(requestedModel: string, actualModel: string): boolean {
+    // Simple model hierarchy validation
+    const modelHierarchy = {
+      'gpt-4': ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+      'gpt-4o': ['gpt-4-turbo', 'gpt-3.5-turbo'],
+      'gpt-4-turbo': ['gpt-3.5-turbo'],
+      'claude-3-opus': ['claude-3.5-sonnet', 'claude-3-sonnet', 'claude-3-haiku'],
+      'claude-3.5-sonnet': ['claude-3-sonnet', 'claude-3-haiku'],
+      'claude-3-sonnet': ['claude-3-haiku'],
+    };
+
+    const allowedDowngrades = modelHierarchy[requestedModel as keyof typeof modelHierarchy] || [];
+
+    // Allow same model or upgrades
+    if (requestedModel === actualModel) return true;
+
+    // Check if actual model is an allowed downgrade
+    return allowedDowngrades.includes(actualModel);
+  }
+
+  // NEW: Quality validation methods
+  async configureQualityValidation(validator: QualityValidator): Promise<void> {
+    try {
+      const response = await fetch(`${this.config.baseUrl}/api/routing/quality`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify({ qualityValidator: validator }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to configure quality validation: ${response.statusText}`);
+      }
+
+      const result = (await response.json()) as { success: boolean; error?: string };
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to configure quality validation');
+      }
+    } catch (error) {
+      console.error('[CostLens] Quality validation configuration failed:', error);
+      throw error;
+    }
+  }
+
+  async validateResponseQuality(response: string): Promise<QualityScore> {
+    try {
+      const responseData = await fetch(`${this.config.baseUrl}/api/routing/quality`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify({ response }),
+      });
+
+      if (!responseData.ok) {
+        throw new Error(`Failed to validate response quality: ${responseData.statusText}`);
+      }
+
+      const result = (await responseData.json()) as { qualityScore: QualityScore };
+      return result.qualityScore;
+    } catch (error) {
+      console.error('[CostLens] Response quality validation failed:', error);
+      throw error;
+    }
+  }
+
+  // NEW: API key management methods
+  async createProviderApiKey(provider: string, apiKey: string): Promise<void> {
+    try {
+      const response = await fetch(`${this.config.baseUrl}/api/api-keys/providers`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify({ provider, apiKey }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to create provider API key: ${response.statusText}`);
+      }
+
+      const result = (await response.json()) as { success: boolean; error?: string };
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to create provider API key');
+      }
+    } catch (error) {
+      console.error('[CostLens] Provider API key creation failed:', error);
+      throw error;
+    }
+  }
+
+  async listProviderApiKeys(): Promise<ProviderApiKey[]> {
+    try {
+      const response = await fetch(`${this.config.baseUrl}/api/api-keys/providers`, {
+        headers: {
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to list provider API keys: ${response.statusText}`);
+      }
+
+      const result = (await response.json()) as { apiKeys?: ProviderApiKey[] };
+      return result.apiKeys || [];
+    } catch (error) {
+      console.error('[CostLens] Failed to list provider API keys:', error);
+      throw error;
+    }
+  }
+
+  // NEW: Enhanced routing methods
+  async getRoutingDecision(prompt: string, options?: RoutingOptions): Promise<RoutingDecision> {
+    try {
+      const response = await fetch(`${this.config.baseUrl}/api/quality/routing`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify({ prompt, options }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to get routing decision: ${response.statusText}`);
+      }
+
+      const result = (await response.json()) as { routingDecision: RoutingDecision };
+      return result.routingDecision;
+    } catch (error) {
+      console.error('[CostLens] Routing decision failed:', error);
+      throw error;
+    }
+  }
+
+  // NEW: Predictive cost forecasting
+  async getCostForecast(): Promise<{
+    forecast: Array<{
+      date: string;
+      predictedCost: number;
+      confidence: number;
+      factors: {
+        requestVolume: number;
+        avgCostPerRequest: number;
+        seasonalAdjustment: number;
+      };
+    }>;
+  }> {
+    try {
+      const response = await fetch(`${this.config.baseUrl}/api/cost/predictive?type=forecast`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to get cost forecast: ${response.statusText}`);
+      }
+
+      const result = (await response.json()) as { forecast: any[] };
+      return result;
+    } catch (error) {
+      console.error('[CostLens] Cost forecast failed:', error);
+      throw error;
+    }
+  }
+
+  // NEW: Cost alerts and monitoring
+  async checkCostAlerts(): Promise<{
+    alerts: Array<{
+      id: string;
+      type: 'budget_exceeded' | 'unusual_spike' | 'runaway_cost';
+      severity: 'low' | 'medium' | 'high' | 'critical';
+      message: string;
+      currentSpend: number;
+      threshold: number;
+      createdAt: string;
+      resolved: boolean;
+    }>;
+  }> {
+    try {
+      const response = await fetch(`${this.config.baseUrl}/api/cost/predictive?type=alerts`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to check cost alerts: ${response.statusText}`);
+      }
+
+      const result = (await response.json()) as { alerts: any[] };
+      return result;
+    } catch (error) {
+      console.error('[CostLens] Cost alerts check failed:', error);
+      throw error;
+    }
+  }
+
+  // NEW: Optimization recommendations
+  async getOptimizationRecommendations(): Promise<{
+    potentialSavings: number;
+    recommendations: Array<{
+      type: 'model_downgrade' | 'provider_switch' | 'prompt_optimization' | 'batch_processing';
+      description: string;
+      estimatedSavings: number;
+      confidence: number;
+    }>;
+  }> {
+    try {
+      const response = await fetch(
+        `${this.config.baseUrl}/api/cost/predictive?type=recommendations`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.config.apiKey}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to get optimization recommendations: ${response.statusText}`);
+      }
+
+      const result = (await response.json()) as {
+        potentialSavings: number;
+        recommendations: any[];
+      };
+      return result;
+    } catch (error) {
+      console.error('[CostLens] Optimization recommendations failed:', error);
+      throw error;
+    }
+  }
+
+  // NEW: Context-aware routing
+  async routeWithContext(
+    prompt: string,
+    preferences?: {
+      maxCost?: number;
+      minQuality?: number;
+      maxLatency?: number;
+      urgency?: 'low' | 'medium' | 'high';
+    }
+  ): Promise<{
+    selectedModel: string;
+    provider: string;
+    reasoning: string;
+    confidence: number;
+    expectedCost: number;
+    expectedQuality: number;
+    expectedLatency: number;
+    contextFactors: {
+      promptComplexity: string;
+      taskType: string;
+      qualityRequirement: string;
+      urgency: string;
+    };
+  }> {
+    try {
+      const response = await fetch(`${this.config.baseUrl}/api/routing/context-aware`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify({ prompt, preferences }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to get context-aware routing: ${response.statusText}`);
+      }
+
+      const result = (await response.json()) as { success: boolean; routingDecision: any };
+      if (!result.success) {
+        throw new Error('Context-aware routing failed');
+      }
+
+      return result.routingDecision;
+    } catch (error) {
+      console.error('[CostLens] Context-aware routing failed:', error);
+      throw error;
+    }
+  }
+
+  // NEW: Enhanced batch processing
+  async trackBatch(requests: BatchRequest[]): Promise<BatchResult[]> {
+    try {
+      const response = await fetch(`${this.config.baseUrl}/api/integrations/batch`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify({ requests }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to process batch: ${response.statusText}`);
+      }
+
+      const result = (await response.json()) as { results?: BatchResult[] };
+      return result.results || [];
+    } catch (error) {
+      console.error('[CostLens] Batch processing failed:', error);
+      throw error;
+    }
+  }
+
+  // NEW: Configuration validation
+  validateProviderConfig(config: Partial<ProviderConfig>): boolean {
+    if (!config.provider || typeof config.provider !== 'string') return false;
+    if (config.weight !== undefined && (config.weight < 0 || config.weight > 100)) return false;
+    if (config.minQuality !== undefined && (config.minQuality < 0 || config.minQuality > 1))
+      return false;
+    if (
+      config.routingStrategy &&
+      !['balanced', 'quality-first', 'cost-first', 'custom'].includes(config.routingStrategy)
+    )
+      return false;
+
+    return true;
   }
 
   // Circuit breaker methods
