@@ -13,6 +13,7 @@ interface CostLensConfig {
   smartRouting?: boolean;
   autoOptimize?: boolean;
   costLimit?: number;
+  logLevel?: 'silent' | 'error' | 'warn' | 'info';
   routingPolicy?: (
     requestedModel: string,
     messages: any[]
@@ -158,13 +159,6 @@ export class CostLens {
   private _routingDisabledLogged = false;
 
   constructor(config: CostLensConfig) {
-    // Validate API key but don't throw - just warn
-    if (!config.apiKey || config.apiKey.trim() === '') {
-      console.warn(
-        '[CostLens] Warning: No API key provided. Tracking and optimization features will be disabled, but your app will continue to work.'
-      );
-    }
-
     this.config = {
       baseUrl: 'https://api.costlens.dev',
       enableCache: true,
@@ -172,8 +166,35 @@ export class CostLens {
       middleware: [],
       autoFallback: true,
       smartRouting: true, // ON by default
+      logLevel: 'warn', // Default to warn level
       ...config,
     };
+
+    // Validate API key but don't throw - just warn
+    if (!config.apiKey || config.apiKey.trim() === '') {
+      this.log('warn', 'Warning: No API key provided. Tracking and optimization features will be disabled, but your app will continue to work.');
+    }
+  }
+
+  private log(level: 'info' | 'warn' | 'error', message: string, ...args: any[]): void {
+    const logLevel = this.config.logLevel || 'warn';
+    
+    if (logLevel === 'silent') return;
+    
+    const levels = { error: 0, warn: 1, info: 2 };
+    const currentLevel = levels[logLevel];
+    const messageLevel = levels[level];
+    
+    if (messageLevel <= currentLevel) {
+      const prefix = '[CostLens]';
+      if (level === 'error') {
+        console.error(prefix, message, ...args);
+      } else if (level === 'warn') {
+        console.warn(prefix, message, ...args);
+      } else {
+        console.log(prefix, message, ...args);
+      }
+    }
   }
 
   private estimateComplexity(messages: any[]): 'simple' | 'medium' | 'complex' {
@@ -594,12 +615,12 @@ export class CostLens {
               if (routingEnabled) {
                 params.model = await self.selectOptimalModel(params.model, params.messages);
                 if (params.model !== originalModel) {
-                  console.log(`[CostLens] Smart routing: ${originalModel} → ${params.model}`);
+                  self.log('info', `Smart routing: ${originalModel} → ${params.model}`);
                 }
               } else {
                 // Only log once per session to avoid spam
                 if (!self._routingDisabledLogged) {
-                  console.log('[CostLens] Smart routing disabled due to quality concerns');
+                  self.log('info', 'Smart routing disabled due to quality concerns');
                   self._routingDisabledLogged = true;
                 }
               }
@@ -624,7 +645,7 @@ export class CostLens {
               });
               const localCached = self.getFromCache(localKey);
               if (localCached) {
-                console.log('[CostLens] Cache hit (memory) - $0 cost!');
+                self.log('info', 'Cache hit (memory) - $0 cost!');
                 return localCached;
               }
             }
@@ -906,7 +927,7 @@ export class CostLens {
           if (self.config.smartRouting) {
             params.model = await self.selectOptimalModel(params.model, params.messages);
             if (params.model !== originalModel) {
-              console.log(`[CostLens] Smart routing: ${originalModel} → ${params.model}`);
+              self.log('info', `Smart routing: ${originalModel} → ${params.model}`);
             }
           }
 

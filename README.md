@@ -1,20 +1,19 @@
-# CostLens SDK v2.0
+# CostLens SDK v1.2.0
 
 [![npm version](https://img.shields.io/npm/v/costlens)](https://www.npmjs.com/package/costlens)
 [![npm downloads](https://img.shields.io/npm/dm/costlens)](https://www.npmjs.com/package/costlens)
 
-Smart AI cost optimization with **multi-provider routing**, **model enforcement**, and **quality validation**. Automatically routes requests across providers while maintaining quality and preventing downgrades. Save **up to 60%** on AI API costs.
+Smart AI cost optimization for **OpenAI and Anthropic**. Automatically routes expensive models to cheaper alternatives while maintaining quality. Save **up to 95%** on AI API costs with zero code changes.
 
-## 🚀 New in v2.0
+## 🚀 Key Features
 
-- **Multi-Provider Configuration**: Route requests across OpenAI, Anthropic, Google, and DeepSeek
-- **Model Enforcement**: Prevent unwanted model downgrades with validation
-- **Quality Validation**: Ensure response quality meets your standards
-- **Routing Strategies**: Choose between balanced, quality-first, or cost-first routing
-- **API Key Management**: Securely manage and rotate provider API keys
-- **Predictive Cost Analytics**: 30-day forecasts, alerts, and optimization recommendations
-- **Context-Aware Routing**: Intelligent routing based on prompt complexity and task type
-- **Enhanced Batch Processing**: Process multiple requests efficiently with 3-5x better performance
+- **Smart Model Routing**: GPT-4 → GPT-3.5, Claude Opus → Claude Haiku
+- **Quality Protection**: Prevents routing when quality would degrade
+- **Zero Code Changes**: Drop-in wrapper for existing OpenAI/Anthropic code
+- **Cost Analytics**: Track usage, costs, and savings in real-time
+- **Caching**: Avoid duplicate API calls with intelligent caching
+- **Fallback Support**: Automatic fallback to alternative models
+- **Error Handling**: Robust retry logic and circuit breakers
 
 ## Installation
 
@@ -24,26 +23,48 @@ npm install costlens
 
 ## Quick Start
 
+### OpenAI Integration
+
 ```typescript
 import { CostLens } from 'costlens';
+import OpenAI from 'openai';
 
 const costlens = new CostLens({
   apiKey: 'your-costlens-api-key',
   smartRouting: true,
 });
 
-// OpenAI with smart routing
-import OpenAI from 'openai';
 const openai = new OpenAI({ apiKey: 'your-openai-key' });
 const ai = costlens.wrapOpenAI(openai);
 
 const response = await ai.chat.completions.create({
-  model: 'gpt-4', // May be routed to gpt-3.5-turbo for cost savings
+  model: 'gpt-4', // May be routed to gpt-3.5-turbo for 95% cost savings
   messages: [{ role: 'user', content: 'Hello!' }],
 });
 ```
 
-### Advanced configuration
+### Anthropic Integration
+
+```typescript
+import { CostLens } from 'costlens';
+import Anthropic from '@anthropic-ai/sdk';
+
+const costlens = new CostLens({
+  apiKey: 'your-costlens-api-key',
+  smartRouting: true,
+});
+
+const anthropic = new Anthropic({ apiKey: 'your-anthropic-key' });
+const ai = costlens.wrapAnthropic(anthropic);
+
+const response = await ai.messages.create({
+  model: 'claude-3-opus-20240229', // May be routed to claude-3-haiku for 98% savings
+  messages: [{ role: 'user', content: 'Hello!' }],
+  max_tokens: 100,
+});
+```
+
+### Advanced Configuration
 
 ```ts
 const costlens = new CostLens({

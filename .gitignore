@@ -7,3 +7,5 @@ INTERNAL-CHANGES.md
 coverage/** 
 
 LOAD_TESTING.md
+
+.amazonq/

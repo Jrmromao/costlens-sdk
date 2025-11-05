@@ -33,11 +33,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
-      - name: Run tests
-        run: npm test
+      - name: Lint (errors only)
+        run: npm run lint:check
       
       - name: Build
         run: npm run build
+      
+      - name: Run tests
+        run: npm test --silent
       
       - name: Check if package exists
         id: check-package

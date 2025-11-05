@@ -26,16 +26,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
-      - name: Run tests
-        run: npm test
+      - name: Lint (errors only)
+        run: npm run lint:check
       
-      - name: Build
+      - name: TypeScript build
         run: npm run build
       
-      - name: Check types
-        run: npx tsc --noEmit
+      - name: Run tests
+        run: npm test --silent
 
-  lint:
+  lint-and-format:
     runs-on: ubuntu-latest
     
     steps:
@@ -51,4 +51,8 @@ jobs:
         run: npm ci
       
       - name: Check formatting
-        run: npx prettier --check "src/**/*.ts"
+        run: npm run format:check
+      
+      - name: Full lint check (with warnings)
+        run: npm run lint
+        continue-on-error: true
