@@ -172,19 +172,22 @@ export class CostLens {
 
     // Validate API key but don't throw - just warn
     if (!config.apiKey || config.apiKey.trim() === '') {
-      this.log('warn', 'Warning: No API key provided. Tracking and optimization features will be disabled, but your app will continue to work.');
+      this.log(
+        'warn',
+        'Warning: No API key provided. Tracking and optimization features will be disabled, but your app will continue to work.'
+      );
     }
   }
 
   private log(level: 'info' | 'warn' | 'error', message: string, ...args: any[]): void {
     const logLevel = this.config.logLevel || 'warn';
-    
+
     if (logLevel === 'silent') return;
-    
+
     const levels = { error: 0, warn: 1, info: 2 };
     const currentLevel = levels[logLevel];
     const messageLevel = levels[level];
-    
+
     if (messageLevel <= currentLevel) {
       const prefix = '[CostLens]';
       if (level === 'error') {
