@@ -134,8 +134,11 @@ interface ProviderApiKey {
 }
 
 interface BatchRequest {
+  provider?: string;
   model: string;
-  prompt: string;
+  prompt?: string;
+  tokens?: number;
+  latency?: number;
   options?: RoutingOptions;
 }
 
@@ -171,7 +174,7 @@ export class CostLens {
     };
 
     // Validate API key but don't throw - just warn
-    if (!config.apiKey || config.apiKey.trim() === '') {
+    if (!this.config.apiKey || this.config.apiKey.trim() === '') {
       this.log(
         'warn',
         'Warning: No API key provided. Tracking and optimization features will be disabled, but your app will continue to work.'

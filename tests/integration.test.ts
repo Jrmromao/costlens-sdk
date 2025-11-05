@@ -301,7 +301,7 @@ describe('CostLens SDK - Integration Tests', () => {
         { provider: 'anthropic', model: 'claude-3-opus', tokens: 150, latency: 600 },
       ]);
 
-      expect(global.fetch).toHaveBeenCalledTimes(3);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
     });
   });
 

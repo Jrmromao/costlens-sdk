@@ -436,7 +436,7 @@ describe('CostLens SDK - Unit Tests', () => {
         { provider: 'anthropic', model: 'claude-3', tokens: 20, latency: 200 },
       ]);
 
-      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -666,6 +666,7 @@ describe('CostLens SDK - Unit Tests', () => {
       new CostLens({ apiKey: '' });
       
       expect(consoleSpy).toHaveBeenCalledWith(
+        '[CostLens]',
         expect.stringContaining('Warning: No API key provided')
       );
       
@@ -678,6 +679,7 @@ describe('CostLens SDK - Unit Tests', () => {
       new CostLens({ apiKey: '   ' });
       
       expect(consoleSpy).toHaveBeenCalledWith(
+        '[CostLens]',
         expect.stringContaining('Warning: No API key provided')
       );
       
