@@ -2,7 +2,7 @@
 
 All notable changes to the CostLens SDK will be documented in this file.
 
-## [1.3.0] - 2024-11-09
+## [1.3.1] - 2024-11-09
 
 ### ✨ Added - Instant Mode
 - **NEW: Zero-config instant mode** - CostLens now works without any API key required
@@ -33,7 +33,7 @@ All notable changes to the CostLens SDK will be documented in this file.
 - **Edge Deployments**: Run cost optimization anywhere
 - **Open Source Projects**: Include cost optimization without barriers
 
-## [1.2.0] - Previous Release
+## [1.3.0] - Previous Release
 - Smart model routing
 - Quality protection
 - Cost analytics
