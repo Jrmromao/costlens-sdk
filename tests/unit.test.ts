@@ -660,28 +660,26 @@ describe('CostLens SDK - Unit Tests', () => {
   });
 
   describe('API Key Validation', () => {
-    it('should warn when no API key is provided', () => {
+    it('should initialize silently when no API key is provided (instant mode)', () => {
       const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
       
-      new CostLens({ apiKey: '' });
+      const costlens = new CostLens({ apiKey: '' });
       
-      expect(consoleSpy).toHaveBeenCalledWith(
-        '[CostLens]',
-        expect.stringContaining('Warning: No API key provided')
-      );
+      // Should not warn - instant mode works silently
+      expect(consoleSpy).not.toHaveBeenCalled();
+      expect(costlens).toBeInstanceOf(CostLens);
       
       consoleSpy.mockRestore();
     });
 
-    it('should warn when API key is only whitespace', () => {
+    it('should initialize silently when API key is only whitespace (instant mode)', () => {
       const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
       
-      new CostLens({ apiKey: '   ' });
+      const costlens = new CostLens({ apiKey: '   ' });
       
-      expect(consoleSpy).toHaveBeenCalledWith(
-        '[CostLens]',
-        expect.stringContaining('Warning: No API key provided')
-      );
+      // Should not warn - instant mode works silently
+      expect(consoleSpy).not.toHaveBeenCalled();
+      expect(costlens).toBeInstanceOf(CostLens);
       
       consoleSpy.mockRestore();
     });

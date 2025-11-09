@@ -1,16 +1,36 @@
-# CostLens SDK v1.2.0
+# CostLens SDK v1.3.0
 
 [![npm version](https://img.shields.io/npm/v/costlens)](https://www.npmjs.com/package/costlens)
 [![npm downloads](https://img.shields.io/npm/dm/costlens)](https://www.npmjs.com/package/costlens)
 
 Smart AI cost optimization for **OpenAI and Anthropic**. Automatically routes expensive models to cheaper alternatives while maintaining quality. Save **up to 95%** on AI API costs with zero code changes.
 
+## ✨ NEW: Instant Mode
+
+**No API key required!** CostLens now works instantly with cost optimization and smart routing - perfect for getting started or deploying anywhere.
+
+```typescript
+import { CostLens } from 'costlens';
+import OpenAI from 'openai';
+
+// ✨ Instant mode - no API key needed!
+const costlens = new CostLens();
+const openai = new OpenAI({ apiKey: 'your-openai-key' });
+const ai = costlens.wrapOpenAI(openai);
+
+const response = await ai.chat.completions.create({
+  model: 'gpt-4', // Automatically routes to gpt-3.5-turbo (97% savings!)
+  messages: [{ role: 'user', content: 'Hello!' }],
+});
+```
+
 ## 🚀 Key Features
 
+- **✨ Instant Mode**: Works immediately without any setup or API keys
 - **Smart Model Routing**: GPT-4 → GPT-3.5, Claude Opus → Claude Haiku
 - **Quality Protection**: Prevents routing when quality would degrade
 - **Zero Code Changes**: Drop-in wrapper for existing OpenAI/Anthropic code
-- **Cost Analytics**: Track usage, costs, and savings in real-time
+- **Cost Analytics**: Track usage, costs, and savings in real-time (cloud mode)
 - **Caching**: Avoid duplicate API calls with intelligent caching
 - **Fallback Support**: Automatic fallback to alternative models
 - **Error Handling**: Robust retry logic and circuit breakers
@@ -23,14 +43,42 @@ npm install costlens
 
 ## Quick Start
 
-### OpenAI Integration
+### Instant Mode (No API Key Required)
+
+Perfect for development, testing, or any environment where you want immediate cost optimization:
+
+```typescript
+import { CostLens } from 'costlens';
+import OpenAI from 'openai';
+
+// Works instantly - no configuration needed!
+const costlens = new CostLens();
+const openai = new OpenAI({ apiKey: 'your-openai-key' });
+const ai = costlens.wrapOpenAI(openai);
+
+// Smart routing works immediately
+const response = await ai.chat.completions.create({
+  model: 'gpt-4', // Routes to gpt-3.5-turbo for simple tasks
+  messages: [{ role: 'user', content: 'What is 2+2?' }],
+});
+
+// Check potential savings
+const savings = await costlens.calculateSavings('gpt-4', [
+  { role: 'user', content: 'What is 2+2?' }
+]);
+console.log(`Save ${savings.savingsPercentage.toFixed(1)}% with ${savings.recommendedModel}`);
+```
+
+### Cloud Mode (Full Features)
+
+For production applications that need tracking, analytics, and advanced features:
 
 ```typescript
 import { CostLens } from 'costlens';
 import OpenAI from 'openai';
 
 const costlens = new CostLens({
-  apiKey: 'your-costlens-api-key',
+  apiKey: 'your-costlens-api-key', // Get from https://costlens.dev
   smartRouting: true,
 });
 
@@ -44,6 +92,8 @@ const response = await ai.chat.completions.create({
 ```
 
 ### Anthropic Integration
+
+Works with both instant and cloud modes:
 
 ```typescript
 import { CostLens } from 'costlens';

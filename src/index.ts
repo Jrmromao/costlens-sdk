@@ -4,7 +4,7 @@ import { SmartCall } from './smartCall';
 import { QualityDetector } from './qualityDetector';
 
 interface CostLensConfig {
-  apiKey: string;
+  apiKey?: string; // Made optional for instant mode
   baseUrl?: string;
   enableCache?: boolean;
   maxRetries?: number;
@@ -161,7 +161,7 @@ export class CostLens {
   private circuitBreakerTimeout = 60000; // 1 minute
   private _routingDisabledLogged = false;
 
-  constructor(config: CostLensConfig) {
+  constructor(config: CostLensConfig = {}) {
     this.config = {
       baseUrl: 'https://api.costlens.dev',
       enableCache: true,
@@ -173,13 +173,7 @@ export class CostLens {
       ...config,
     };
 
-    // Validate API key but don't throw - just warn
-    if (!this.config.apiKey || this.config.apiKey.trim() === '') {
-      this.log(
-        'warn',
-        'Warning: No API key provided. Tracking and optimization features will be disabled, but your app will continue to work.'
-      );
-    }
+    // No noisy logs - just work silently
   }
 
   private log(level: 'info' | 'warn' | 'error', message: string, ...args: any[]): void {
@@ -375,12 +369,12 @@ export class CostLens {
   }
 
   private async estimateCost(model: string, messages: any[]): Promise<number> {
-    // More accurate token estimation
+    // Use existing token estimation and pricing logic
     const inputTokens = this.estimateTokens(messages, 'input');
     const outputTokens = this.estimateTokens(messages, 'output');
     const totalTokens = inputTokens + outputTokens;
 
-    // Separate input/output pricing for accuracy
+    // Use existing pricing logic (works with or without API key)
     const pricing = this.getModelPricing(model);
     const inputCost = (inputTokens / 1000000) * pricing.input;
     const outputCost = (outputTokens / 1000000) * pricing.output;
@@ -447,6 +441,12 @@ export class CostLens {
 
   private async trackRun(data: TrackRunData): Promise<void> {
     try {
+      // Skip tracking if no API key (instant mode)
+      if (!this.config.apiKey) {
+        return;
+      }
+
+      // Existing cloud tracking logic
       // Circuit breaker: skip tracking if API is down
       if (this.isApiDown()) {
         return;
@@ -1089,7 +1089,17 @@ export class CostLens {
     averageLatency: number;
     errorRate: number;
   } {
-    // This would integrate with your existing monitoring system
+    // Return basic defaults if no API key (instant mode)
+    if (!this.config.apiKey) {
+      return {
+        cacheHitRate: 0,
+        totalSavings: 0,
+        averageLatency: 0,
+        errorRate: 0,
+      };
+    }
+
+    // Cloud mode - integrate with your existing monitoring system
     return {
       cacheHitRate: 0.75, // Placeholder - integrate with your monitoring
       totalSavings: 0, // Placeholder - integrate with your monitoring
@@ -1100,6 +1110,9 @@ export class CostLens {
 
   // Smart Call: Automatically select cheapest model meeting quality threshold
   smartCall(client: any) {
+    if (!this.config.apiKey) {
+      throw new Error('SmartCall requires an API key. Please provide one to use cloud features.');
+    }
     return new SmartCall(client, this.config.apiKey);
   }
 
