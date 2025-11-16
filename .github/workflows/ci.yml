@@ -53,6 +53,5 @@ jobs:
       - name: Check formatting
         run: npm run format:check
       
-      - name: Full lint check (with warnings)
-        run: npm run lint
-        continue-on-error: true
+      - name: Lint check (allow warnings)
+        run: npm run lint:check
