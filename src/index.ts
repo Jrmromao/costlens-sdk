@@ -160,6 +160,8 @@ export class CostLens {
   private circuitBreakerThreshold = 5; // Fail 5 times in a row
   private circuitBreakerTimeout = 60000; // 1 minute
   private _routingDisabledLogged = false;
+  private mode: 'cloud' | 'instant';
+  private sessionId?: string;
 
   constructor(config: CostLensConfig = {}) {
     this.config = {
@@ -173,7 +175,12 @@ export class CostLens {
       ...config,
     };
 
-    // No noisy logs - just work silently
+    // Detect mode based on API key presence
+    this.mode = config.apiKey && config.apiKey.trim() !== '' ? 'cloud' : 'instant';
+
+    if (this.mode === 'instant') {
+      this.log('info', '✨ Instant Mode: Working locally. Upgrade for cloud tracking.');
+    }
   }
 
   private log(level: 'info' | 'warn' | 'error', message: string, ...args: any[]): void {
@@ -441,55 +448,133 @@ export class CostLens {
 
   private async trackRun(data: TrackRunData): Promise<void> {
     try {
-      // Skip tracking if no API key (instant mode)
-      if (!this.config.apiKey) {
-        return;
-      }
+      // Choose endpoint based on mode
+      const endpoint =
+        this.mode === 'instant'
+          ? `${this.config.baseUrl}/api/integrations/run/instant`
+          : `${this.config.baseUrl}/api/integrations/run`;
 
-      // Existing cloud tracking logic
-      // Circuit breaker: skip tracking if API is down
-      if (this.isApiDown()) {
+      // Circuit breaker: skip tracking if API is down (cloud mode only)
+      if (this.mode === 'cloud' && this.isApiDown()) {
         return;
       }
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
 
-      const response = await fetch(`${this.config.baseUrl}/integrations/run`, {
+      // Add requestId and correlationId if not provided
+      const trackingData = {
+        ...data,
+        requestId: data.requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        correlationId: data.correlationId || null,
+      };
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      // Only add auth header if in cloud mode
+      if (this.mode === 'cloud') {
+        headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+      }
+
+      const response = await fetch(endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.config.apiKey}`,
-        },
-        body: JSON.stringify(data),
+        headers,
+        body: JSON.stringify(trackingData),
         signal: controller.signal,
       });
 
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        // Track API failures for circuit breaker
-        this.recordApiFailure();
-
-        if (response.status === 401 || response.status === 403) {
-          console.warn(
-            '[CostLens] Invalid API key - tracking disabled. Your app will continue to work.'
+        // Handle rate limits for instant mode
+        if (response.status === 429 && this.mode === 'instant') {
+          const errorData = (await response.json().catch(() => ({}))) as { upgradeUrl?: string };
+          this.log(
+            'warn',
+            'Rate limit exceeded. Upgrade for unlimited tracking:',
+            errorData.upgradeUrl
           );
+          return; // Don't throw, just skip tracking
+        }
+
+        // Track API failures for circuit breaker (cloud mode only)
+        if (this.mode === 'cloud') {
+          this.recordApiFailure();
+        }
+
+        // Handle auth errors for cloud mode
+        if ((response.status === 401 || response.status === 403) && this.mode === 'cloud') {
+          this.log('warn', 'Invalid API key - tracking disabled. Your app will continue to work.');
         } else {
-          console.warn('[CostLens] Tracking failed:', response.statusText);
+          this.log('warn', 'Tracking failed:', response.statusText);
         }
       } else {
-        // Reset failure count on success
-        this.resetApiFailures();
+        // Reset failure count on success (cloud mode only)
+        if (this.mode === 'cloud') {
+          this.resetApiFailures();
+        }
+
+        // Handle instant mode response
+        if (this.mode === 'instant') {
+          const result = (await response.json().catch(() => ({}))) as {
+            sessionId?: string;
+            upgradePrompt?: {
+              message: string;
+              upgradeUrl: string;
+              showAt: boolean;
+            };
+          };
+
+          // Store sessionId for analytics
+          if (result.sessionId) {
+            this.sessionId = result.sessionId;
+          }
+
+          // Show upgrade prompt if needed
+          if (result.upgradePrompt?.showAt) {
+            this.log('info', result.upgradePrompt.message);
+            this.log('info', `Upgrade: ${result.upgradePrompt.upgradeUrl}`);
+          }
+        }
       }
     } catch (error) {
-      this.recordApiFailure();
+      // Track API failures for circuit breaker (cloud mode only)
+      if (this.mode === 'cloud') {
+        this.recordApiFailure();
+      }
 
       // Only log if it's not a timeout (to reduce noise)
       if ((error as Error).name !== 'AbortError') {
-        console.warn('[CostLens] Tracking error (non-fatal):', error);
+        this.log('warn', 'Tracking error (non-fatal):', error);
       }
     }
+  }
+
+  /**
+   * Get analytics URL for instant mode sessions
+   * @returns Analytics URL if in instant mode and sessionId exists, null otherwise
+   */
+  public getAnalyticsUrl(): string | null {
+    if (this.mode === 'instant' && this.sessionId) {
+      return `https://costlens.dev/analytics/instant?sessionId=${this.sessionId}`;
+    }
+    return null;
+  }
+
+  /**
+   * Get current mode (cloud or instant)
+   */
+  public getMode(): 'cloud' | 'instant' {
+    return this.mode;
+  }
+
+  /**
+   * Get session ID for instant mode
+   */
+  public getSessionId(): string | undefined {
+    return this.sessionId;
   }
 
   private getCacheKey(provider: string, params: any): string {

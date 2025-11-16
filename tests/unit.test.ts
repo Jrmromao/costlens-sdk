@@ -409,7 +409,7 @@ describe('CostLens SDK - Unit Tests', () => {
       );
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.costlens.dev/integrations/run',
+        'https://api.costlens.dev/api/integrations/run',
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
