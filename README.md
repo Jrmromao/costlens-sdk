@@ -1,4 +1,4 @@
-# CostLens SDK v1.3.1
+# CostLens SDK v1.3.3
 
 [![npm version](https://img.shields.io/npm/v/costlens)](https://www.npmjs.com/package/costlens)
 [![npm downloads](https://img.shields.io/npm/dm/costlens)](https://www.npmjs.com/package/costlens)
